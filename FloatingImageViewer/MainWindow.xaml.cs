@@ -46,6 +46,7 @@ public partial class MainWindow : Window
     private bool _compareActive;
     private bool _compareSplitMode;
     private bool _compareTopBottom;
+    private bool _compareFitSize;
     private double _compareSplit = 0.5;
     private bool _comparePanning;
     private bool _compareDraggingSplit;
@@ -1882,8 +1883,8 @@ public partial class MainWindow : Window
     /// </summary>
     private void StartCompare(string pathB)
     {
-        var layerA = _activeLayer;
-        var pathA = layerA?.Path;
+        // 对比模式中重选：_activeLayer 已被清空，用记录的 A 图路径。
+        var pathA = _activeLayer?.Path ?? _comparePathA;
         if (pathA is null || string.Equals(pathA, pathB, StringComparison.OrdinalIgnoreCase))
         {
             return;
@@ -1891,7 +1892,10 @@ public partial class MainWindow : Window
 
         try
         {
-            double initScale = Math.Max(0.01, layerA?.ZoomScale ?? 1.0);
+            // 初始缩放保持 A 图进入前的缩放（重选时保持当前对比缩放）。
+            double initScale = _compareActive
+                ? _compareScale.ScaleX
+                : Math.Max(0.01, _activeLayer?.ZoomScale ?? 1.0);
             _compareGifA?.Stop();
             _compareGifB?.Stop();
             var (sourceA, gifA) = LoadCompareSource(pathA, _compareA);
@@ -1981,10 +1985,41 @@ public partial class MainWindow : Window
         double scale = _compareScale.ScaleX;
         double panX = _comparePan.X;
         double panY = _comparePan.Y;
-        double dwA = a.PixelWidth * scale;
-        double dhA = a.PixelHeight * scale;
-        double dwB = b.PixelWidth * scale;
-        double dhB = b.PixelHeight * scale;
+        // 适应大小：左右并排等高、上下并列等宽（取两者较大值按比例缩放），分割模式不适用。
+        double dwA;
+        double dhA;
+        double dwB;
+        double dhB;
+        if (_compareFitSize && !_compareSplitMode)
+        {
+            if (_compareTopBottom)
+            {
+                double targetW = Math.Max(a.PixelWidth, b.PixelWidth) * scale;
+                double sa = targetW / a.PixelWidth;
+                double sb = targetW / b.PixelWidth;
+                dwA = a.PixelWidth * sa;
+                dhA = a.PixelHeight * sa;
+                dwB = b.PixelWidth * sb;
+                dhB = b.PixelHeight * sb;
+            }
+            else
+            {
+                double targetH = Math.Max(a.PixelHeight, b.PixelHeight) * scale;
+                double sa = targetH / a.PixelHeight;
+                double sb = targetH / b.PixelHeight;
+                dwA = a.PixelWidth * sa;
+                dhA = a.PixelHeight * sa;
+                dwB = b.PixelWidth * sb;
+                dhB = b.PixelHeight * sb;
+            }
+        }
+        else
+        {
+            dwA = a.PixelWidth * scale;
+            dhA = a.PixelHeight * scale;
+            dwB = b.PixelWidth * scale;
+            dhB = b.PixelHeight * scale;
+        }
 
         if (_compareSplitMode)
         {
@@ -2063,6 +2098,11 @@ public partial class MainWindow : Window
                 _compareTopBottom = value == "TopBottom";
                 UpdateCompareTransform();
             }));
+        submenu.Items.Add(CreateCheckItem("适应大小", _compareFitSize, () =>
+        {
+            _compareFitSize = !_compareFitSize;
+            UpdateCompareTransform();
+        }));
         submenu.Items.Add(CreateItem("退出对比", ExitCompare));
         return submenu;
     }
@@ -2119,7 +2159,7 @@ public partial class MainWindow : Window
         var submenu = new MenuItem { Header = "图层" };
         if (_layers.Count == 0)
         {
-            submenu.Items.Add(CreateItem("暂无图片", () => { }));
+            submenu.Items.Add(CreateItem(_compareActive ? "对比模式" : "暂无图片", () => { }));
             return submenu;
         }
 
