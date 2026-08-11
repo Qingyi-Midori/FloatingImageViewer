@@ -1902,7 +1902,7 @@ public partial class MainWindow : Window
 
     /// <summary>
     /// 中键单击（位移小于阈值）：马赛克模式下擦除鼠标下的马赛克效果层；
-    /// 普通模式下删除鼠标下的图片图层（仅当删除后仍有图层，单图不删防止误触退出程序）。
+    /// 普通模式下删除鼠标下的图片图层（删除唯一图层即退出程序，与“关闭图片”一致）。
     /// </summary>
     private void MiddleClickRemove(Point position)
     {
@@ -1918,7 +1918,7 @@ public partial class MainWindow : Window
         }
 
         var layerHit = HitTestLayer(position);
-        if (layerHit is not null && _layers.Count > 1)
+        if (layerHit is not null)
         {
             RemoveLayer(layerHit);
         }
