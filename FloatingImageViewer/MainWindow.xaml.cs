@@ -68,13 +68,14 @@ public partial class MainWindow : Window
     private Action<double>? _inputLive;
     private string _inputFormat = "{0:0}";
     private double _inputCurrent;
-    private readonly Canvas _inputCanvas = new();
     private readonly Border _inputPanel = new()
     {
         Background = new SolidColorBrush(Color.FromArgb(235, 30, 30, 30)),
         CornerRadius = new CornerRadius(10),
         Padding = new Thickness(14, 12, 14, 12),
         Width = 260,
+        HorizontalAlignment = HorizontalAlignment.Center,
+        VerticalAlignment = VerticalAlignment.Center,
         Visibility = Visibility.Collapsed,
     };
     private readonly TextBlock _inputTitle = new()
@@ -209,10 +210,8 @@ public partial class MainWindow : Window
         inputLayout.Children.Add(_inputValue);
         inputLayout.Children.Add(inputButtons);
         _inputPanel.Child = inputLayout;
-        _inputCanvas.Children.Add(_inputPanel);
-        Canvas.SetLeft(_inputPanel, (Width - _inputPanel.Width) / 2.0);
-        Canvas.SetTop(_inputPanel, 48);
-        RootGrid.Children.Add(_inputCanvas);
+        // 面板直接挂到 RootGrid（Grid 对齐居中），置于最上层。
+        RootGrid.Children.Add(_inputPanel);
         _inputSlider.ValueChanged += (_, _) =>
         {
             if (!_inputActive)
@@ -863,7 +862,8 @@ public partial class MainWindow : Window
     {
         if (_inputActive)
         {
-            e.Handled = true;
+            // 面板内点击放行给面板控件（滑块/按钮），面板外拦截避免误操作图层。
+            e.Handled = !IsPointInInputPanel(e.GetPosition(this));
             return;
         }
 
@@ -888,6 +888,11 @@ public partial class MainWindow : Window
 
     private void Window_PreviewMouseUp(object sender, MouseButtonEventArgs e)
     {
+        if (_inputActive)
+        {
+            return; // 输入面板打开时禁用主窗口操作（中键删除等）
+        }
+
         if (_compareActive)
         {
             _comparePanning = false;
@@ -2552,6 +2557,13 @@ public partial class MainWindow : Window
     {
         _inputActive = false;
         _inputPanel.Visibility = Visibility.Collapsed;
+    }
+
+    /// <summary>判断窗口坐标点是否在输入面板内（面板打开时用于区分面板内外点击）。</summary>
+    private bool IsPointInInputPanel(Point windowPoint)
+    {
+        var topLeft = _inputPanel.TranslatePoint(new Point(0, 0), this);
+        return new Rect(topLeft, new Size(_inputPanel.ActualWidth, _inputPanel.ActualHeight)).Contains(windowPoint);
     }
 
     private double ParseInputText()
