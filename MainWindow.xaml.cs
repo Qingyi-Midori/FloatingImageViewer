@@ -45,11 +45,15 @@ public partial class MainWindow : Window
     // 图片对比模式
     private bool _compareActive;
     private bool _compareSplitMode;
+    private bool _compareTopBottom;
     private double _compareSplit = 0.5;
     private bool _comparePanning;
     private bool _compareDraggingSplit;
     private Point _compareLastPoint;
     private string? _comparePathA;
+    private GifAnimation? _compareGifA;
+    private GifAnimation? _compareGifB;
+    private const double CompareGap = 8;
     private readonly ScaleTransform _compareScale = new();
     private readonly TranslateTransform _comparePan = new();
     private readonly Image _compareA = new() { Stretch = Stretch.Fill, IsHitTestVisible = false };
@@ -1872,10 +1876,14 @@ public partial class MainWindow : Window
         StartCompare(Path.GetFullPath(dialog.FileName));
     }
 
-    /// <summary>进入图片对比模式：A = 当前图层图片，B = 传入图片，支持左右并排 / 滑动分割。</summary>
+    /// <summary>
+    /// 进入图片对比模式：A = 当前图层图片，B = 传入图片。
+    /// 初始缩放保持 A 图进入前的缩放（不放大），支持左右并排 / 上下并列 / 滑动分割，GIF 正常播放。
+    /// </summary>
     private void StartCompare(string pathB)
     {
-        var pathA = _activeLayer?.Path;
+        var layerA = _activeLayer;
+        var pathA = layerA?.Path;
         if (pathA is null || string.Equals(pathA, pathB, StringComparison.OrdinalIgnoreCase))
         {
             return;
@@ -1883,8 +1891,11 @@ public partial class MainWindow : Window
 
         try
         {
-            var sourceA = LoadStaticImage(pathA);
-            var sourceB = LoadStaticImage(pathB);
+            double initScale = Math.Max(0.01, layerA?.ZoomScale ?? 1.0);
+            _compareGifA?.Stop();
+            _compareGifB?.Stop();
+            var (sourceA, gifA) = LoadCompareSource(pathA, _compareA);
+            var (sourceB, gifB) = LoadCompareSource(pathB, _compareB);
             foreach (var layer in _layers)
             {
                 layer.Gif?.Stop();
@@ -1894,14 +1905,16 @@ public partial class MainWindow : Window
             _layers.Clear();
             _activeLayer = null;
             _comparePathA = pathA;
+            _compareGifA = gifA;
+            _compareGifB = gifB;
             _compareA.Source = sourceA;
             _compareB.Source = sourceB;
             _compareCanvas.Children.Clear();
             _compareCanvas.Children.Add(_compareA);
             _compareCanvas.Children.Add(_compareB);
             _compareCanvas.Children.Add(_compareSplitLine);
-            _compareScale.ScaleX = 1;
-            _compareScale.ScaleY = 1;
+            _compareScale.ScaleX = initScale;
+            _compareScale.ScaleY = initScale;
             _comparePan.X = 0;
             _comparePan.Y = 0;
             _compareSplit = 0.5;
@@ -1909,6 +1922,8 @@ public partial class MainWindow : Window
             _comparePanning = false;
             _compareDraggingSplit = false;
             UpdateCompareTransform();
+            gifA?.Start();
+            gifB?.Start();
         }
         catch (Exception ex)
         {
@@ -1921,18 +1936,39 @@ public partial class MainWindow : Window
         }
     }
 
+    /// <summary>加载对比图源：GIF 用独立播放器（对比中正常播放），静态图走解码缓存。</summary>
+    private (BitmapSource Source, GifAnimation? Gif) LoadCompareSource(string path, Image target)
+    {
+        if (string.Equals(Path.GetExtension(path), ".gif", StringComparison.OrdinalIgnoreCase))
+        {
+            var gif = new GifAnimation(target);
+            var source = gif.Load(path)
+                ?? throw new InvalidOperationException("GIF 解码失败。");
+            return (source, gif);
+        }
+
+        return (LoadStaticImage(path), null);
+    }
+
     /// <summary>退出对比模式：恢复 A 图为普通图层。</summary>
     private void ExitCompare()
     {
         _compareActive = false;
         _compareCanvas.Children.Clear();
+        _compareGifA?.Stop();
+        _compareGifB?.Stop();
+        _compareGifA = null;
+        _compareGifB = null;
         if (_comparePathA is not null)
         {
             LoadImage(_comparePathA);
         }
     }
 
-    /// <summary>对比布局计算：左右并排（各自 Fit 半区）或滑动分割（全窗口 + Clip）。</summary>
+    /// <summary>
+    /// 对比布局计算：左右并排 / 上下并列（两张图贴在一起、整体居中）或滑动分割
+    /// （同一视图叠加 + 分割线，分割线只覆盖两图重叠的竖直范围）。
+    /// </summary>
     private void UpdateCompareTransform()
     {
         if (!_compareActive || _compareA.Source is not BitmapSource a || _compareB.Source is not BitmapSource b)
@@ -1945,60 +1981,66 @@ public partial class MainWindow : Window
         double scale = _compareScale.ScaleX;
         double panX = _comparePan.X;
         double panY = _comparePan.Y;
-        double aw = a.PixelWidth;
-        double ah = a.PixelHeight;
-        double bw = b.PixelWidth;
-        double bh = b.PixelHeight;
+        double dwA = a.PixelWidth * scale;
+        double dhA = a.PixelHeight * scale;
+        double dwB = b.PixelWidth * scale;
+        double dhB = b.PixelHeight * scale;
 
         if (_compareSplitMode)
         {
-            // 滑动分割：两张图都 Fit 全窗口、同步缩放平移，分割线左侧显示 A、右侧显示 B。
-            double sa = Math.Min(w / aw, h / ah) * scale;
-            double sb = Math.Min(w / bw, h / bh) * scale;
-            double leftA = (w - aw * sa) / 2.0 + panX;
-            double topA = (h - ah * sa) / 2.0 + panY;
-            double leftB = (w - bw * sb) / 2.0 + panX;
-            double topB = (h - bh * sb) / 2.0 + panY;
-            _compareA.Width = aw * sa;
-            _compareA.Height = ah * sa;
-            Canvas.SetLeft(_compareA, leftA);
-            Canvas.SetTop(_compareA, topA);
-            _compareB.Width = bw * sb;
-            _compareB.Height = bh * sb;
-            Canvas.SetLeft(_compareB, leftB);
-            Canvas.SetTop(_compareB, topB);
+            // 滑动分割：两图同一视图（各自居中 + 同缩放平移），分割线左侧 A、右侧 B。
+            double leftA = (w - dwA) / 2.0 + panX;
+            double topA = (h - dhA) / 2.0 + panY;
+            double leftB = (w - dwB) / 2.0 + panX;
+            double topB = (h - dhB) / 2.0 + panY;
+            SetImage(_compareA, leftA, topA, dwA, dhA);
+            SetImage(_compareB, leftB, topB, dwB, dhB);
             double splitX = w * _compareSplit;
-            double clipA = Math.Clamp(splitX - leftA, 0, aw * sa);
-            _compareA.Clip = new RectangleGeometry(new Rect(0, 0, clipA, ah * sa));
-            double clipBLeft = Math.Clamp(splitX - leftB, 0, bw * sb);
-            _compareB.Clip = new RectangleGeometry(new Rect(clipBLeft, 0, bw * sb - clipBLeft, bh * sb));
+            double clipA = Math.Clamp(splitX - leftA, 0, dwA);
+            _compareA.Clip = new RectangleGeometry(new Rect(0, 0, clipA, dhA));
+            double clipBLeft = Math.Clamp(splitX - leftB, 0, dwB);
+            _compareB.Clip = new RectangleGeometry(new Rect(clipBLeft, 0, Math.Max(0, dwB - clipBLeft), dhB));
+            // 分割线只覆盖两图重叠的竖直范围，不超出图片。
+            double top = Math.Max(topA, topB);
+            double bottom = Math.Min(topA + dhA, topB + dhB);
             Canvas.SetLeft(_compareSplitLine, splitX - 1);
-            Canvas.SetTop(_compareSplitLine, 0);
-            _compareSplitLine.Height = h;
-            _compareSplitLine.Visibility = Visibility.Visible;
+            Canvas.SetTop(_compareSplitLine, top);
+            _compareSplitLine.Height = Math.Max(0, bottom - top);
+            _compareSplitLine.Visibility = bottom > top ? Visibility.Visible : Visibility.Collapsed;
         }
         else
         {
-            // 左右并排：各自 Fit 到半区，同步缩放平移。
-            double hw = w / 2.0;
-            double sa = Math.Min(hw / aw, h / ah) * scale;
-            double sb = Math.Min(hw / bw, h / bh) * scale;
-            double leftA = (hw - aw * sa) / 2.0 + panX;
-            double topA = (h - ah * sa) / 2.0 + panY;
-            double leftB = hw + (hw - bw * sb) / 2.0 + panX;
-            double topB = (h - bh * sb) / 2.0 + panY;
-            _compareA.Width = aw * sa;
-            _compareA.Height = ah * sa;
-            Canvas.SetLeft(_compareA, leftA);
-            Canvas.SetTop(_compareA, topA);
+            // 左右并排 / 上下并列：两张图贴在一起（8px 间距），整体居中于窗口。
+            double gap = CompareGap;
+            if (_compareTopBottom)
+            {
+                double totalHeight = dhA + gap + dhB;
+                double top0 = (h - totalHeight) / 2.0 + panY;
+                double left0 = (w - Math.Max(dwA, dwB)) / 2.0 + panX;
+                SetImage(_compareA, left0, top0, dwA, dhA);
+                SetImage(_compareB, left0, top0 + dhA + gap, dwB, dhB);
+            }
+            else
+            {
+                double totalWidth = dwA + gap + dwB;
+                double left0 = (w - totalWidth) / 2.0 + panX;
+                double top0 = (h - Math.Max(dhA, dhB)) / 2.0 + panY;
+                SetImage(_compareA, left0, top0, dwA, dhA);
+                SetImage(_compareB, left0 + dwA + gap, top0, dwB, dhB);
+            }
+
             _compareA.Clip = null;
-            _compareB.Width = bw * sb;
-            _compareB.Height = bh * sb;
-            Canvas.SetLeft(_compareB, leftB);
-            Canvas.SetTop(_compareB, topB);
             _compareB.Clip = null;
             _compareSplitLine.Visibility = Visibility.Collapsed;
         }
+    }
+
+    private static void SetImage(Image image, double left, double top, double width, double height)
+    {
+        image.Width = width;
+        image.Height = height;
+        Canvas.SetLeft(image, left);
+        Canvas.SetTop(image, top);
     }
 
     /// <summary>图片对比子菜单：选择对比图、布局、退出。</summary>
@@ -2008,11 +2050,17 @@ public partial class MainWindow : Window
         submenu.Items.Add(CreateItem(_compareActive ? "重新选择对比图片..." : "选择对比图片...", ChooseCompareImage));
         submenu.Items.Add(CreateRadioSubmenu(
             "布局",
-            new[] { ("左右并排", "SideBySide"), ("滑动分割", "Split") },
-            _compareSplitMode ? "Split" : "SideBySide",
+            new[]
+            {
+                ("左右并排", "SideBySide"),
+                ("上下并列", "TopBottom"),
+                ("滑动分割", "Split"),
+            },
+            _compareSplitMode ? "Split" : _compareTopBottom ? "TopBottom" : "SideBySide",
             value =>
             {
                 _compareSplitMode = value == "Split";
+                _compareTopBottom = value == "TopBottom";
                 UpdateCompareTransform();
             }));
         submenu.Items.Add(CreateItem("退出对比", ExitCompare));
