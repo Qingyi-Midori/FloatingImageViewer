@@ -16,6 +16,7 @@
         PreviewMouseDown="Window_PreviewMouseDown"
         PreviewMouseUp="Window_PreviewMouseUp"
         PreviewMouseMove="Window_PreviewMouseMove"
+        MouseLeave="Window_MouseLeave"
         PreviewMouseWheel="Window_PreviewMouseWheel"
         LocationChanged="Window_LocationChanged"
         SizeChanged="Window_SizeChanged"
