@@ -64,9 +64,9 @@ public partial class MainWindow : Window
     private double _mosaicSmudgePx = 8;
     private Color _mosaicColor = Colors.Black;
     private BitmapSource? _mosaicBase;
+    private ImageLayer? _mosaicBaseLayer;
     private Image? _mosaicPreview;
     private Border? _mosaicBox;
-    private readonly Canvas _overlayCanvas = new() { IsHitTestVisible = false };
     private readonly List<Image> _mosaicEffects = new();
 
     public bool IsImageLoaded { get; }
@@ -99,8 +99,6 @@ public partial class MainWindow : Window
             ApplyAntiAliasing();
         };
         BuildContextMenu();
-        // 马赛克效果覆盖层：屏幕坐标、全屏可框选（图片区域外也能覆盖），位于图层之上、黑切之下。
-        RootGrid.Children.Insert(1, _overlayCanvas);
         IsImageLoaded = LoadImage(imagePath);
         if (IsImageLoaded)
         {
@@ -698,7 +696,7 @@ public partial class MainWindow : Window
             UpdateMosaicPreview();
             if (_mosaicPreview is not null)
             {
-                _mosaicEffects.Add(_mosaicPreview); // 效果层保留在覆盖层上
+                _mosaicEffects.Add(_mosaicPreview); // 效果层保留在底图图层上（随图片变换）
                 _mosaicPreview = null;
             }
 
@@ -1513,16 +1511,12 @@ public partial class MainWindow : Window
         // 底图作为唯一图层：锁定 1:1 铺满窗口，窗口坐标即底图像素坐标。
         _mosaicBase = rtb;
         var baseLayer = AddLayer("马赛克底图", rtb);
+        _mosaicBaseLayer = baseLayer;
         baseLayer.ZoomScale = 1.0;
         baseLayer.UserPan = new Point(0, 0);
         UpdateTransform();
 
-        // 清空上一轮的效果层
-        foreach (var effect in _mosaicEffects)
-        {
-            _overlayCanvas.Children.Remove(effect);
-        }
-
+        // 清空上一轮的效果层（旧底图已随图层清空移除，这里仅清列表）。
         _mosaicEffects.Clear();
         _mosaicActive = true;
         _mosaicSelecting = false;
@@ -1533,10 +1527,10 @@ public partial class MainWindow : Window
             BorderThickness = new Thickness(1.5),
             Visibility = Visibility.Collapsed,
         };
-        _overlayCanvas.Children.Add(_mosaicBox);
+        baseLayer.Canvas.Children.Add(_mosaicBox);
     }
 
-    /// <summary>退出框选马赛克模式（已应用的效果层保留在屏幕覆盖层上）。</summary>
+    /// <summary>退出框选马赛克模式（效果层保留在底图图层上，随图片缩放/平移）。</summary>
     private void ExitMosaic()
     {
         _mosaicActive = false;
@@ -1545,7 +1539,7 @@ public partial class MainWindow : Window
         _mosaicBox = null;
     }
 
-    /// <summary>开始一次框选：创建效果层与框选虚线框（屏幕坐标，全屏可框选）。</summary>
+    /// <summary>开始一次框选：创建效果层与框选虚线框（挂载到底图图层，随图片变换）。</summary>
     private void BeginMosaicSelection(MouseButtonEventArgs e)
     {
         _mosaicSelecting = true;
@@ -1556,14 +1550,14 @@ public partial class MainWindow : Window
             Stretch = Stretch.Fill,
             IsHitTestVisible = false,
         };
-        _overlayCanvas.Children.Add(_mosaicPreview);
+        _mosaicBaseLayer?.Canvas.Children.Add(_mosaicPreview);
         if (_mosaicBox is not null)
         {
             _mosaicBox.Visibility = Visibility.Visible;
         }
     }
 
-    /// <summary>按当前框选矩形实时生成并叠加效果（窗口坐标 = 覆盖层坐标）。</summary>
+    /// <summary>按当前框选矩形实时生成并叠加效果（底图锁定 1:1 时窗口坐标 = 底图坐标）。</summary>
     private void UpdateMosaicPreview()
     {
         if (_mosaicBase is null || _mosaicPreview is null || _mosaicBox is null)
@@ -1600,14 +1594,14 @@ public partial class MainWindow : Window
         Canvas.SetTop(_mosaicBox, y);
     }
 
-    /// <summary>返回鼠标位置命中的最上层马赛克效果层（屏幕坐标），未命中返回 null。</summary>
-    private Image? HitTestMosaicLayer(Point windowPoint)
+    /// <summary>返回鼠标位置命中的最上层马赛克效果层（底图坐标），未命中返回 null。</summary>
+    private Image? HitTestMosaicLayer(Point position)
     {
         for (int i = _mosaicEffects.Count - 1; i >= 0; i--)
         {
             var effect = _mosaicEffects[i];
             var rect = new Rect(Canvas.GetLeft(effect), Canvas.GetTop(effect), effect.Width, effect.Height);
-            if (rect.Contains(windowPoint))
+            if (rect.Contains(position))
             {
                 return effect;
             }
@@ -1616,11 +1610,11 @@ public partial class MainWindow : Window
         return null;
     }
 
-    /// <summary>移除指定的马赛克效果层（右键擦除）。</summary>
+    /// <summary>移除指定的马赛克效果层（中键擦除）。</summary>
     private void RemoveMosaicLayer(Image effect)
     {
         _mosaicEffects.Remove(effect);
-        _overlayCanvas.Children.Remove(effect);
+        _mosaicBaseLayer?.Canvas.Children.Remove(effect);
     }
 
     /// <summary>
@@ -1648,26 +1642,15 @@ public partial class MainWindow : Window
     }
 
     /// <summary>
-    /// 中键单击（位移小于阈值）：去除鼠标所在位置的内容——
-    /// 马赛克模式下擦除鼠标下的马赛克效果层，普通模式下删除鼠标下的图片图层（含当前图层）。
+    /// 中键单击（位移小于阈值）：擦除鼠标所在位置的马赛克效果层。
+    /// 图片图层不通过中键删除（避免误触导致程序退出），删除请用菜单或 Shift+中键。
     /// </summary>
     private void MiddleClickRemove(Point position)
     {
-        if (_mosaicActive)
+        var mosaicHit = HitTestMosaicLayer(position);
+        if (mosaicHit is not null)
         {
-            var mosaicHit = HitTestMosaicLayer(position);
-            if (mosaicHit is not null)
-            {
-                RemoveMosaicLayer(mosaicHit);
-            }
-
-            return;
-        }
-
-        var layerHit = HitTestLayer(position);
-        if (layerHit is not null)
-        {
-            RemoveLayer(layerHit);
+            RemoveMosaicLayer(mosaicHit);
         }
     }
 
