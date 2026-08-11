@@ -70,6 +70,20 @@ public partial class MainWindow : Window
     };
     private readonly Canvas _compareCanvas = new() { IsHitTestVisible = false };
 
+    // 颜色拾取器
+    private bool _colorPickActive;
+    private string _colorPickFormat = "Hex";
+    private readonly Border _colorPreview = new()
+    {
+        CornerRadius = new CornerRadius(4),
+        Padding = new Thickness(6, 2, 6, 2),
+        BorderBrush = new SolidColorBrush(Color.FromArgb(160, 0, 0, 0)),
+        BorderThickness = new Thickness(1),
+        IsHitTestVisible = false,
+        Visibility = Visibility.Collapsed,
+    };
+    private readonly TextBlock _colorPreviewText = new() { FontSize = 12 };
+
     private List<string>? _slideFiles;
     private int _slideIndex;
     private bool _slideshowActive;
@@ -134,6 +148,9 @@ public partial class MainWindow : Window
         BuildContextMenu();
         // 图片对比层：位于图层之上、黑切之下。
         RootGrid.Children.Insert(1, _compareCanvas);
+        // 颜色拾取预览条：置于最上层。
+        _colorPreview.Child = _colorPreviewText;
+        RootGrid.Children.Add(_colorPreview);
         // 会话恢复：有历史图层则恢复上次会话，否则按传入路径加载。
         if (_settings.Layers.Count > 0)
         {
@@ -645,7 +662,7 @@ public partial class MainWindow : Window
 
     private void Window_PreviewMouseWheel(object sender, MouseWheelEventArgs e)
     {
-        if (_mosaicActive)
+        if (_colorPickActive || _mosaicActive)
         {
             e.Handled = true;
             return;
@@ -750,6 +767,12 @@ public partial class MainWindow : Window
             return;
         }
 
+        if (_colorPickActive)
+        {
+            e.Handled = true;
+            return;
+        }
+
         if (_compareActive)
         {
             // 对比模式：中键 = 同步平移。
@@ -817,6 +840,13 @@ public partial class MainWindow : Window
     private void Window_PreviewMouseMove(object sender, MouseEventArgs e)
     {
         var position = e.GetPosition(this);
+        if (_colorPickActive)
+        {
+            // 拾取模式：移动实时预览颜色。
+            UpdateColorPreview(position);
+            return;
+        }
+
         if (_compareActive)
         {
             if (_compareDraggingSplit)
@@ -882,6 +912,14 @@ public partial class MainWindow : Window
 
     private void Window_MouseLeftButtonDown(object sender, MouseButtonEventArgs e)
     {
+        if (_colorPickActive)
+        {
+            // 拾取模式：左键点击拾取颜色并复制。
+            PickColor(e.GetPosition(this));
+            e.Handled = true;
+            return;
+        }
+
         if (_mosaicActive)
         {
             BeginMosaicSelection(e);
@@ -1081,6 +1119,14 @@ public partial class MainWindow : Window
 
     private void Window_ContextMenuOpening(object sender, ContextMenuEventArgs e)
     {
+        if (_colorPickActive)
+        {
+            // 拾取模式下：右键 = 退出拾取，不弹菜单。
+            e.Handled = true;
+            ToggleColorPick();
+            return;
+        }
+
         if (_mosaicActive)
         {
             // 马赛克绘制模式下：右键 = 直接退出绘制模式（效果保留在屏幕上），不弹菜单。
@@ -1119,6 +1165,7 @@ public partial class MainWindow : Window
         menu.Items.Add(CreateLayerSubmenu());
         menu.Items.Add(CreateMosaicSubmenu());
         menu.Items.Add(CreateCompareSubmenu());
+        menu.Items.Add(CreateColorPickerSubmenu());
 
         menu.Items.Add(CreateRadioSubmenu(
             "缩放模式",
@@ -2044,6 +2091,96 @@ public partial class MainWindow : Window
                 StartMosaic();
             }
         }));
+        return submenu;
+    }
+
+    #endregion
+
+    #region 颜色拾取器
+
+    /// <summary>进入/退出拾取模式：进入后鼠标移动实时预览屏幕像素颜色，左键点击复制到剪贴板。</summary>
+    private void ToggleColorPick()
+    {
+        _colorPickActive = !_colorPickActive;
+        _colorPreview.Visibility = _colorPickActive ? Visibility.Visible : Visibility.Collapsed;
+        if (_colorPickActive)
+        {
+            UpdateColorPreview(Mouse.GetPosition(this));
+        }
+    }
+
+    /// <summary>更新拾取预览：读取鼠标位置屏幕像素颜色，显示在鼠标旁。</summary>
+    private void UpdateColorPreview(Point windowPoint)
+    {
+        var color = PickColorAt(ToScreenPixel(windowPoint));
+        _colorPreview.Background = new SolidColorBrush(color);
+        _colorPreviewText.Text = FormatColor(color);
+        _colorPreviewText.Foreground = (color.R + color.G + color.B) / 3 > 128 ? Brushes.Black : Brushes.White;
+        Canvas.SetLeft(_colorPreview, windowPoint.X + 16);
+        Canvas.SetTop(_colorPreview, windowPoint.Y + 16);
+    }
+
+    /// <summary>左键点击拾取：复制颜色值到剪贴板并退出拾取模式。</summary>
+    private void PickColor(Point windowPoint)
+    {
+        var color = PickColorAt(ToScreenPixel(windowPoint));
+        try
+        {
+            Clipboard.SetText(FormatColor(color));
+        }
+        catch
+        {
+            // 剪贴板被占用等瞬时异常忽略。
+        }
+
+        ToggleColorPick();
+    }
+
+    /// <summary>窗口坐标（DIP）转屏幕物理像素坐标。</summary>
+    private Point ToScreenPixel(Point windowPoint)
+    {
+        var dpi = VisualTreeHelper.GetDpi(this);
+        return new Point(
+            Math.Round((Left + windowPoint.X) * dpi.DpiScaleX),
+            Math.Round((Top + windowPoint.Y) * dpi.DpiScaleY));
+    }
+
+    /// <summary>按复制格式输出颜色文本。</summary>
+    private string FormatColor(Color color) => _colorPickFormat switch
+    {
+        "RGB" => $"RGB({color.R}, {color.G}, {color.B})",
+        "Both" => $"#{color.R:X2}{color.G:X2}{color.B:X2}  RGB({color.R}, {color.G}, {color.B})",
+        _ => $"#{color.R:X2}{color.G:X2}{color.B:X2}",
+    };
+
+    /// <summary>截取屏幕指定物理像素的颜色。</summary>
+    private static Color PickColorAt(Point screenPixel)
+    {
+        using var bitmap = new System.Drawing.Bitmap(1, 1);
+        using (var g = System.Drawing.Graphics.FromImage(bitmap))
+        {
+            g.CopyFromScreen(
+                (int)screenPixel.X,
+                (int)screenPixel.Y,
+                0,
+                0,
+                new System.Drawing.Size(1, 1));
+        }
+
+        var pixel = bitmap.GetPixel(0, 0);
+        return Color.FromRgb(pixel.R, pixel.G, pixel.B);
+    }
+
+    /// <summary>颜色拾取子菜单：开始/退出拾取、复制格式。</summary>
+    private MenuItem CreateColorPickerSubmenu()
+    {
+        var submenu = new MenuItem { Header = "颜色拾取" };
+        submenu.Items.Add(CreateItem(_colorPickActive ? "退出拾取" : "开始拾取", ToggleColorPick));
+        submenu.Items.Add(CreateRadioSubmenu(
+            "复制格式",
+            new[] { ("Hex", "Hex"), ("RGB", "RGB"), ("两者", "Both") },
+            _colorPickFormat,
+            value => _colorPickFormat = value));
         return submenu;
     }
 
