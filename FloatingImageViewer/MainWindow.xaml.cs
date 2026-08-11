@@ -115,6 +115,10 @@ public partial class MainWindow : Window
         _clipboardTimer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(500) };
         _clipboardTimer.Tick += ClipboardTimer_Tick;
         _clipboardTimer.IsEnabled = _clipboardWatch;
+        if (_clipboardWatch)
+        {
+            ResetClipboardBaseline(); // 启动时已开启监听：程序开启前复制的内容不粘贴
+        }
         // 中键单击/双击延迟判定：双击（关闭程序）时不执行单击（删除）逻辑。
         _middleClickTimer.Tick += (_, _) =>
         {
@@ -1137,7 +1141,7 @@ public partial class MainWindow : Window
             SaveSettings();
             if (_clipboardWatch)
             {
-                _lastClipboardFingerprint = null; // 开启后首次复制立即生效
+                ResetClipboardBaseline(); // 开启监听后新复制的内容才生效
             }
         }));
 
@@ -1624,6 +1628,26 @@ public partial class MainWindow : Window
     #region 功能操作
 
     #region 剪贴板监听
+
+    /// <summary>记录当前剪贴板图片为基线：开启监听/启动时已有的复制内容不再粘贴，之后的新复制才生效。</summary>
+    private void ResetClipboardBaseline()
+    {
+        try
+        {
+            if (Clipboard.ContainsImage())
+            {
+                var current = Clipboard.GetImage();
+                _lastClipboardFingerprint = current is null ? null : ClipboardFingerprint(current);
+                return;
+            }
+        }
+        catch
+        {
+            // 剪贴板被占用等瞬时异常忽略。
+        }
+
+        _lastClipboardFingerprint = null;
+    }
 
     /// <summary>
     /// 轮询剪贴板：开启监听后，在任何应用中复制图片都会自动粘贴到屏幕（作为新图层）。
