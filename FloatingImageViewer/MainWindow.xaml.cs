@@ -45,6 +45,23 @@ public partial class MainWindow : Window
     private Point _dragStartPan;
     private Point _middleDownPoint;
 
+    // 图片信息面板
+    private bool _infoPanelEnabled;
+    private readonly Canvas _infoCanvas = new() { IsHitTestVisible = false };
+    private readonly Border _infoPanel = new()
+    {
+        Background = new SolidColorBrush(Color.FromArgb(230, 30, 30, 30)),
+        CornerRadius = new CornerRadius(8),
+        Padding = new Thickness(10, 6, 10, 6),
+        IsHitTestVisible = false,
+        Visibility = Visibility.Collapsed,
+    };
+    private readonly TextBlock _infoPanelText = new()
+    {
+        Foreground = new SolidColorBrush(Color.FromArgb(240, 224, 224, 224)),
+        FontSize = 12,
+    };
+
     // 图片对比模式
     private bool _compareActive;
     private bool _compareSplitMode;
@@ -134,6 +151,11 @@ public partial class MainWindow : Window
         BuildContextMenu();
         // 图片对比层：位于图层之上、黑切之下。
         RootGrid.Children.Insert(1, _compareCanvas);
+        // 图片信息面板层（最上层）。
+        _infoPanel.Child = _infoPanelText;
+        _infoCanvas.Children.Add(_infoPanel);
+        RootGrid.Children.Add(_infoCanvas);
+        _infoPanelEnabled = _settings.InfoPanel;
         // 会话恢复：有历史图层则恢复上次会话，否则按传入路径加载。
         if (_settings.Layers.Count > 0)
         {
@@ -635,6 +657,11 @@ public partial class MainWindow : Window
         // 背景与活动图层同尺寸同位置：只覆盖图片区域，窗口其余部分保持透明。
         Backdrop.Width = layer.ElementWidth;
         Backdrop.Height = layer.ElementHeight;
+        // 信息面板可见时跟随图片变换。
+        if (_infoPanel.Visibility == Visibility.Visible && _infoPanelEnabled)
+        {
+            UpdateInfoPanel(layer);
+        }
         // 棋盘格纹样保持屏幕恒定大小：图片缩放时反向补偿画刷平铺尺寸，
         // 否则高分辨率图缩小后格子被压成细密纹理、放大后变成大色块。
         if (Backdrop.Background is DrawingBrush checker && checker.TileMode == TileMode.Tile)
@@ -866,6 +893,11 @@ public partial class MainWindow : Window
         if (hover is not null)
         {
             SetActiveLayer(hover);
+            UpdateInfoPanel(hover);
+        }
+        else
+        {
+            HideInfoPanel();
         }
     }
 
@@ -1113,6 +1145,7 @@ public partial class MainWindow : Window
                 ResetClipboardBaseline(); // 开启监听后新复制的内容才生效
             }
         }));
+        menu.Items.Add(CreateInfoPanelItem());
 
         // 添加图片是主入口（顶层直接点击）；图层管理作为子菜单。
         menu.Items.Add(CreateItem("添加图片...", AddImageFile));
@@ -2299,6 +2332,76 @@ public partial class MainWindow : Window
     }
 
     #endregion
+
+    /// <summary>
+    /// 更新图片信息面板：显示在图层显示区域右侧（溢出窗口时移到左侧）。
+    /// 仅在开关开启且面板可见时更新（悬停时显示、随图片变换跟随）。
+    /// </summary>
+    private void UpdateInfoPanel(ImageLayer layer)
+    {
+        if (!_infoPanelEnabled)
+        {
+            HideInfoPanel();
+            return;
+        }
+
+        var rect = GetLayerRect(layer);
+        const double panelWidth = 240;
+        double panelX = rect.Right + 8;
+        double panelY = rect.Top;
+        if (panelX + panelWidth > Width)
+        {
+            panelX = rect.Left - panelWidth - 8;
+        }
+
+        _infoPanelText.Text = BuildLayerInfo(layer);
+        Canvas.SetLeft(_infoPanel, Math.Max(2, panelX));
+        Canvas.SetTop(_infoPanel, Math.Max(2, panelY));
+        _infoPanel.Visibility = Visibility.Visible;
+    }
+
+    private void HideInfoPanel()
+    {
+        _infoPanel.Visibility = Visibility.Collapsed;
+    }
+
+    /// <summary>面板内容：文件名、像素尺寸、文件大小、格式。</summary>
+    private static string BuildLayerInfo(ImageLayer layer)
+    {
+        var sb = new StringBuilder();
+        sb.AppendLine(Path.GetFileName(layer.Path));
+        sb.AppendLine($"{layer.PixelWidth} × {layer.PixelHeight} px");
+        try
+        {
+            sb.AppendLine(FormatFileSize(new FileInfo(layer.Path).Length));
+        }
+        catch
+        {
+            // 文件信息不可用时省略大小。
+        }
+
+        var extension = Path.GetExtension(layer.Path).TrimStart('.').ToUpperInvariant();
+        sb.Append(string.IsNullOrEmpty(extension) ? "图片" : extension);
+        return sb.ToString();
+    }
+
+    private static string FormatFileSize(long bytes)
+        => bytes >= 1024 * 1024
+            ? $"{bytes / 1024.0 / 1024.0:0.0} MB"
+            : $"{bytes / 1024.0:0.0} KB";
+
+    /// <summary>图片信息面板子菜单开关（默认关闭）。</summary>
+    private MenuItem CreateInfoPanelItem()
+        => CreateCheckItem("图片信息", _infoPanelEnabled, () =>
+        {
+            _infoPanelEnabled = !_infoPanelEnabled;
+            _settings.InfoPanel = _infoPanelEnabled;
+            SaveSettings();
+            if (!_infoPanelEnabled)
+            {
+                HideInfoPanel();
+            }
+        });
 
     /// <summary>选择并批量添加多张图片作为新图层（依次置于图层栈顶，可多选）。</summary>
     private void AddImageFile()

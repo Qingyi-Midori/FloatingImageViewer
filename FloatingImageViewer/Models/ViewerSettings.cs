@@ -19,6 +19,9 @@ public sealed class ViewerSettings
     /// <summary>剪贴板监听（复制图片自动粘贴到屏幕，默认关闭）。</summary>
     public bool ClipboardWatch { get; set; }
 
+    /// <summary>图片信息面板（鼠标悬停图片时在图片右侧显示信息，默认关闭）。</summary>
+    public bool InfoPanel { get; set; }
+
     /// <summary>Fit / Original / Stretch</summary>
     public string ZoomMode { get; set; } = "Fit";
 

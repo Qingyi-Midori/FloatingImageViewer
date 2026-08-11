@@ -67,6 +67,7 @@ internal static class Program
             Height = 600,
     Topmost = false,
     ClipboardWatch = true,
+    InfoPanel = true,
     ZoomMode = "Stretch",
     BackgroundMode = "Checkerboard",
     OpacityPercent = 55,
@@ -94,7 +95,7 @@ var loaded = SettingsService.Load();
 Assert(loaded.ImageLeft == 12.5 && loaded.ImageTop == 34.25, "图片位置往返");
         Assert(loaded.Width == 800 && loaded.Height == 600, "尺寸往返");
         Assert(!loaded.Topmost, "置顶往返");
-        Assert(loaded.ClipboardWatch, "剪贴板监听往返");
+        Assert(loaded.ClipboardWatch && loaded.InfoPanel, "剪贴板监听/图片信息往返");
         Assert(loaded.ZoomMode == "Stretch", "缩放往返");
         Assert(loaded.BackgroundMode == "Checkerboard", "背景往返");
         Assert(loaded.OpacityPercent == 55, "透明度往返");
@@ -265,9 +266,9 @@ Assert(clamped.SlideTransition == "Fade" && clamped.SlideDirection == "Left", "�
 
             var buildMenu = typeof(MainWindow).GetMethod("BuildContextMenu", BindingFlags.NonPublic | BindingFlags.Instance)!;
             var menu = (ContextMenu)buildMenu.Invoke(window, null)!;
-            Assert(menu is not null && menu.Items.Count == 19, "菜单项数量");
+            Assert(menu is not null && menu.Items.Count == 20, "菜单项数量");
             var headers = menu!.Items.OfType<MenuItem>().Select(m => m.Header?.ToString()).ToList();
-            foreach (var expected in new[] { "窗口置顶", "剪贴板监听", "添加图片...", "图层", "框选马赛克", "图片对比", "缩放模式", "背景模式", "无用小功能", "不透明度", "图片缓存", "幻灯片放映", "暂停GIF动画", "更换图片", "关闭图片", "重置窗口", "退出程序" })
+            foreach (var expected in new[] { "窗口置顶", "剪贴板监听", "图片信息", "添加图片...", "图层", "框选马赛克", "图片对比", "缩放模式", "背景模式", "无用小功能", "不透明度", "图片缓存", "幻灯片放映", "暂停GIF动画", "更换图片", "关闭图片", "重置窗口", "退出程序" })
             {
                 Assert(headers.Contains(expected), "菜单包含: " + expected);
             }
