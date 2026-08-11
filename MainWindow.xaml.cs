@@ -45,6 +45,10 @@ public partial class MainWindow : Window
     private bool _middleDown;
     private bool _middleDragged;
     private Point _middleDownPoint;
+    private readonly DispatcherTimer _middleClickTimer = new();
+    private bool _middleClickPending;
+    private Point _middleClickPoint;
+    private bool _middleClickShift;
 
     // 图片对比模式
     private bool _compareActive;
@@ -111,6 +115,25 @@ public partial class MainWindow : Window
         _clipboardTimer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(500) };
         _clipboardTimer.Tick += ClipboardTimer_Tick;
         _clipboardTimer.IsEnabled = _clipboardWatch;
+        // 中键单击/双击延迟判定：双击（关闭程序）时不执行单击（删除）逻辑。
+        _middleClickTimer.Tick += (_, _) =>
+        {
+            _middleClickTimer.Stop();
+            if (!_middleClickPending)
+            {
+                return;
+            }
+
+            _middleClickPending = false;
+            if (_middleClickShift)
+            {
+                ShiftMiddleClickRemoveAll(_middleClickPoint);
+            }
+            else
+            {
+                MiddleClickRemove(_middleClickPoint);
+            }
+        };
 
         // 幻灯片划入动画作用于整个图层宿主；各图层的缩放/平移在自己的 Canvas 变换上
         //（图层元素保持原始尺寸，避免元素大于窗口时被先裁剪再缩放）。
@@ -729,14 +752,23 @@ public partial class MainWindow : Window
         {
             if (_middleDown && !_middleDragged)
             {
-                // Shift+中键：一键删除所有马赛克/图层（仅保留第一张）；普通中键单击只删鼠标下内容。
-                if (Keyboard.Modifiers.HasFlag(ModifierKeys.Shift))
+                var shift = Keyboard.Modifiers.HasFlag(ModifierKeys.Shift);
+                if (_middleClickPending)
                 {
-                    ShiftMiddleClickRemoveAll(_middleDownPoint);
+                    // 双击中键：取消单击延迟，按双击处理（关闭程序判定）。
+                    _middleClickPending = false;
+                    _middleClickTimer.Stop();
+                    HandleMiddleDoubleClick(shift, _middleDownPoint);
                 }
                 else
                 {
-                    MiddleClickRemove(_middleDownPoint);
+                    // 单击：延迟 DoubleClickTime 后执行（期间再按一次中键即按双击处理）。
+                    _middleClickPending = true;
+                    _middleClickShift = shift;
+                    _middleClickPoint = _middleDownPoint;
+                    _middleClickTimer.Interval = TimeSpan.FromMilliseconds(
+                        System.Windows.Forms.SystemInformation.DoubleClickTime);
+                    _middleClickTimer.Start();
                 }
             }
 
@@ -1828,6 +1860,23 @@ public partial class MainWindow : Window
     }
 
     /// <summary>
+    /// 中键双击（鼠标必须在任意一张图片上）：只剩一张图时关闭程序；
+    /// Shift+双击无论多少张都关闭（相当于退出程序的全局热键）。
+    /// </summary>
+    private void HandleMiddleDoubleClick(bool shift, Point position)
+    {
+        if (HitTestLayer(position) is null)
+        {
+            return;
+        }
+
+        if (shift || _layers.Count <= 1)
+        {
+            Close();
+        }
+    }
+
+    /// <summary>
     /// 中键单击（位移小于阈值）：马赛克模式下擦除鼠标下的马赛克效果层；
     /// 普通模式下删除鼠标下的图片图层（仅当删除后仍有图层，单图不删防止误触退出程序）。
     /// </summary>
@@ -2678,6 +2727,7 @@ public partial class MainWindow : Window
         _saveTimer.Stop();
         _slideTimer.Stop();
         _clipboardTimer.Stop();
+        _middleClickTimer.Stop();
         CancelTransition();
         foreach (var layer in _layers)
         {
