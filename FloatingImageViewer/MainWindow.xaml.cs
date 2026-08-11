@@ -40,15 +40,10 @@ public partial class MainWindow : Window
     private readonly List<ImageLayer> _layers = new();
     private ImageLayer? _activeLayer;
 
-    private bool _isPanning;
-    private Point _lastPanPoint;
-    private bool _middleDown;
-    private bool _middleDragged;
+    private bool _isDraggingImage;
+    private Point _dragStartPoint;
+    private Point _dragStartPan;
     private Point _middleDownPoint;
-    private readonly DispatcherTimer _middleClickTimer = new();
-    private bool _middleClickPending;
-    private Point _middleClickPoint;
-    private bool _middleClickShift;
 
     // 图片对比模式
     private bool _compareActive;
@@ -74,9 +69,6 @@ public partial class MainWindow : Window
         IsHitTestVisible = false,
     };
     private readonly Canvas _compareCanvas = new() { IsHitTestVisible = false };
-    private bool _isDraggingImage;
-    private Point _dragStartPoint;
-    private Point _dragStartPan;
 
     private List<string>? _slideFiles;
     private int _slideIndex;
@@ -119,25 +111,6 @@ public partial class MainWindow : Window
         {
             ResetClipboardBaseline(); // 启动时已开启监听：程序开启前复制的内容不粘贴
         }
-        // 中键单击/双击延迟判定：双击（关闭程序）时不执行单击（删除）逻辑。
-        _middleClickTimer.Tick += (_, _) =>
-        {
-            _middleClickTimer.Stop();
-            if (!_middleClickPending)
-            {
-                return;
-            }
-
-            _middleClickPending = false;
-            if (_middleClickShift)
-            {
-                ShiftMiddleClickRemoveAll(_middleClickPoint);
-            }
-            else
-            {
-                MiddleClickRemove(_middleClickPoint);
-            }
-        };
 
         // 幻灯片划入动画作用于整个图层宿主；各图层的缩放/平移在自己的 Canvas 变换上
         //（图层元素保持原始尺寸，避免元素大于窗口时被先裁剪再缩放）。
@@ -736,9 +709,7 @@ public partial class MainWindow : Window
             return;
         }
 
-        // 中键按下先记录，位移超过阈值才进入平移；位移小则松开时视为“中键单击”（去除鼠标下内容）。
-        _middleDown = true;
-        _middleDragged = false;
+        // 中键：记录按下位置，松开时执行单击操作（中键不负责拖拽，平移由左键承担）。
         _middleDownPoint = e.GetPosition(this);
         e.Handled = true;
     }
@@ -754,35 +725,14 @@ public partial class MainWindow : Window
 
         if (e.ChangedButton == MouseButton.Middle)
         {
-            if (_middleDown && !_middleDragged)
+            // 中键单击：Shift = 一键清除所有马赛克/图层（仅保留第一张），否则删除鼠标下图层。
+            if (Keyboard.Modifiers.HasFlag(ModifierKeys.Shift))
             {
-                var shift = Keyboard.Modifiers.HasFlag(ModifierKeys.Shift);
-                if (_middleClickPending)
-                {
-                    // 双击中键：取消单击延迟，按双击处理（关闭程序判定）。
-                    _middleClickPending = false;
-                    _middleClickTimer.Stop();
-                    HandleMiddleDoubleClick(shift, _middleDownPoint);
-                }
-                else
-                {
-                    // 单击：延迟 DoubleClickTime 后执行（期间再按一次中键即按双击处理）。
-                    _middleClickPending = true;
-                    _middleClickShift = shift;
-                    _middleClickPoint = _middleDownPoint;
-                    _middleClickTimer.Interval = TimeSpan.FromMilliseconds(
-                        System.Windows.Forms.SystemInformation.DoubleClickTime);
-                    _middleClickTimer.Start();
-                }
+                ShiftMiddleClickRemoveAll(_middleDownPoint);
             }
-
-            _middleDown = false;
-            if (_isPanning)
+            else
             {
-                _isPanning = false;
-                ReleaseMouseCapture();
-                SetInteractiveSampling(false);
-                CenterImageIfLost();
+                MiddleClickRemove(_middleDownPoint);
             }
 
             return;
@@ -860,38 +810,7 @@ public partial class MainWindow : Window
             return;
         }
 
-        if (_middleDown && !_middleDragged && !_mosaicActive)
-        {
-            // 中键按住移动超过阈值即进入平移；单击（小位移）不触发平移。
-            if (Math.Abs(position.X - _middleDownPoint.X) > 3 ||
-                Math.Abs(position.Y - _middleDownPoint.Y) > 3)
-            {
-                _middleDragged = true;
-                _isPanning = true;
-                _lastPanPoint = position;
-                SetInteractiveSampling(true);
-                CaptureMouse();
-            }
-
-            return;
-        }
-
-        if (_isPanning)
-        {
-            var active = _activeLayer;
-            if (active is not null)
-            {
-                active.UserPan = new Point(
-                    active.UserPan.X + position.X - _lastPanPoint.X,
-                    active.UserPan.Y + position.Y - _lastPanPoint.Y);
-                _lastPanPoint = position;
-                UpdateTransform();
-            }
-
-            return;
-        }
-
-        // 悬停即选中：鼠标移到哪个图层上，滚轮缩放/中键平移/双击就直接作用于该图层，
+        // 悬停即选中：鼠标移到哪个图层上，滚轮缩放/双击就直接作用于该图层，
         // 无需先点击选中；移到空白处保持当前选中图层不变。
         var hover = HitTestLayer(position);
         if (hover is not null)
@@ -1650,8 +1569,8 @@ public partial class MainWindow : Window
     }
 
     /// <summary>
-    /// 轮询剪贴板：开启监听后，在任何应用中复制图片都会自动粘贴到屏幕（作为新图层）。
-    /// 去重：Clipboard.GetImage 每次返回新实例，引用比较无效，改用内容指纹（尺寸 + 采样像素）。
+    /// 轮询剪贴板：开启监听后，复制图片（图像数据或文件资源管理器中的图片文件）都会自动粘贴到屏幕。
+    /// 去重：Clipboard.GetImage 每次返回新实例，引用比较无效，改用内容指纹（尺寸 + 采样像素）/ 文件指纹。
     /// </summary>
     private void ClipboardTimer_Tick(object? sender, EventArgs e)
     {
@@ -1662,6 +1581,25 @@ public partial class MainWindow : Window
 
         try
         {
+            // 文件资源管理器复制：剪贴板为文件列表，提取其中的图片文件。
+            if (Clipboard.ContainsFileDropList())
+            {
+                var files = Clipboard.GetFileDropList().Cast<string>()
+                    .Where(ImageFileService.IsSupportedImage)
+                    .ToList();
+                if (files.Count > 0)
+                {
+                    var fingerprint = string.Join(";", files.Select(BuildCacheKey));
+                    if (fingerprint != _lastClipboardFingerprint)
+                    {
+                        _lastClipboardFingerprint = fingerprint;
+                        PasteClipboardFiles(files);
+                    }
+                }
+
+                return;
+            }
+
             if (!Clipboard.ContainsImage())
             {
                 return;
@@ -1673,18 +1611,40 @@ public partial class MainWindow : Window
                 return;
             }
 
-            var fingerprint = ClipboardFingerprint(image);
-            if (fingerprint == _lastClipboardFingerprint)
+            var imageFingerprint = ClipboardFingerprint(image);
+            if (imageFingerprint == _lastClipboardFingerprint)
             {
                 return; // 剪贴板仍是同一张图，不重复粘贴
             }
 
-            _lastClipboardFingerprint = fingerprint;
+            _lastClipboardFingerprint = imageFingerprint;
             AddClipboardLayer(image);
         }
         catch
         {
             // 剪贴板被占用等瞬时异常忽略。
+        }
+    }
+
+    /// <summary>
+    /// 批量粘贴剪贴板中的图片文件：每张添加为图层，按“窗口重叠”样式依次向右下错位层叠。
+    /// </summary>
+    private void PasteClipboardFiles(List<string> paths)
+    {
+        const double overlapOffset = 32;
+        for (int i = 0; i < paths.Count; i++)
+        {
+            try
+            {
+                var layer = AddLayer(paths[i]);
+                ApplyZoomMode();
+                layer.UserPan = new Point(i * overlapOffset, i * overlapOffset);
+                UpdateTransform();
+            }
+            catch
+            {
+                // 单个文件加载失败不影响其余文件。
+            }
         }
     }
 
@@ -1884,25 +1844,8 @@ public partial class MainWindow : Window
     }
 
     /// <summary>
-    /// 中键双击（鼠标必须在任意一张图片上）：只剩一张图时关闭程序；
-    /// Shift+双击无论多少张都关闭（相当于退出程序的全局热键）。
-    /// </summary>
-    private void HandleMiddleDoubleClick(bool shift, Point position)
-    {
-        if (HitTestLayer(position) is null)
-        {
-            return;
-        }
-
-        if (shift || _layers.Count <= 1)
-        {
-            Close();
-        }
-    }
-
-    /// <summary>
     /// 中键单击（位移小于阈值）：马赛克模式下擦除鼠标下的马赛克效果层；
-    /// 普通模式下删除鼠标下的图片图层（删除唯一图层即退出程序，与“关闭图片”一致）。
+    /// 普通模式下删除鼠标下的图片图层（单图时不删除，防止误触退出程序）。
     /// </summary>
     private void MiddleClickRemove(Point position)
     {
@@ -1918,7 +1861,7 @@ public partial class MainWindow : Window
         }
 
         var layerHit = HitTestLayer(position);
-        if (layerHit is not null)
+        if (layerHit is not null && _layers.Count > 1)
         {
             RemoveLayer(layerHit);
         }
@@ -2751,7 +2694,6 @@ public partial class MainWindow : Window
         _saveTimer.Stop();
         _slideTimer.Stop();
         _clipboardTimer.Stop();
-        _middleClickTimer.Stop();
         CancelTransition();
         foreach (var layer in _layers)
         {
