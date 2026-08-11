@@ -83,6 +83,11 @@ internal static class Program
     SlideDirection = "Right",
     CacheStrategy = "Size",
     CacheLimit = 512,
+    Layers = new List<SavedLayer>
+    {
+        new() { Path = "C:\\a.png", ZoomScale = 2.5, PanX = 10, PanY = 20, Visible = false },
+        new() { Path = "C:\\b.gif", ZoomScale = 1.0, Visible = true },
+    },
 };
 SettingsService.Save(settings);
 var loaded = SettingsService.Load();
@@ -101,6 +106,15 @@ Assert(!loaded.SlideshowLoop && loaded.SlideshowIntervalSeconds == 7, "轮播往
 Assert(loaded.SlideTransition == "Slide" && loaded.TransitionDurationMs == 700, "切换动画往返");
 Assert(loaded.SlideDirection == "Right", "切入方向往返");
 Assert(loaded.CacheStrategy == "Size" && loaded.CacheLimit == 512, "缓存设置往返");
+Assert(
+    loaded.Layers.Count == 2 &&
+    loaded.Layers[0].Path == "C:\\a.png" &&
+    Math.Abs(loaded.Layers[0].ZoomScale - 2.5) < 1e-9 &&
+    Math.Abs(loaded.Layers[0].PanX - 10) < 1e-9 &&
+    !loaded.Layers[0].Visible &&
+    loaded.Layers[1].Path == "C:\\b.gif" &&
+    loaded.Layers[1].Visible,
+    "会话图层往返");
     }
 
     private static void TestCorruptFallback()

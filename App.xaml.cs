@@ -1,6 +1,7 @@
 using System.IO;
 using System.Windows;
 using System.Windows.Threading;
+using FloatingImageViewer.Services;
 using Microsoft.Win32;
 
 namespace FloatingImageViewer;
@@ -21,9 +22,10 @@ public partial class App : Application
             args.Handled = true;
         };
 
-        // 可选：直接传入图片路径可跳过文件选择器（便于工具箱传参 / 测试）。
+        // 会话恢复：有历史图层则跳过文件选择器；否则可选传图片路径（便于工具箱传参 / 测试）。
+        var settings = SettingsService.Load();
         string? imagePath = e.Args.FirstOrDefault(a => !string.IsNullOrWhiteSpace(a) && File.Exists(a));
-        if (imagePath is null)
+        if (imagePath is null && settings.Layers.Count == 0)
         {
             var dialog = new OpenFileDialog
             {
@@ -40,7 +42,7 @@ public partial class App : Application
             imagePath = dialog.FileName;
         }
 
-        var window = new MainWindow(Path.GetFullPath(imagePath));
+        var window = new MainWindow(imagePath is null ? null : Path.GetFullPath(imagePath));
         if (!window.IsImageLoaded)
         {
             Shutdown();

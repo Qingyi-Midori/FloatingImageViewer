@@ -96,7 +96,7 @@ public partial class MainWindow : Window
 
     public bool IsImageLoaded { get; }
 
-    public MainWindow(string imagePath)
+    public MainWindow(string? imagePath)
     {
         InitializeComponent();
 
@@ -134,10 +134,23 @@ public partial class MainWindow : Window
         BuildContextMenu();
         // 图片对比层：位于图层之上、黑切之下。
         RootGrid.Children.Insert(1, _compareCanvas);
-        IsImageLoaded = LoadImage(imagePath);
-        if (IsImageLoaded)
+        // 会话恢复：有历史图层则恢复上次会话，否则按传入路径加载。
+        if (_settings.Layers.Count > 0)
         {
-            ApplySavedImagePosition();
+            RestoreLayers();
+            IsImageLoaded = _layers.Count > 0;
+        }
+        else if (imagePath is not null)
+        {
+            IsImageLoaded = LoadImage(imagePath);
+            if (IsImageLoaded)
+            {
+                ApplySavedImagePosition();
+            }
+        }
+        else
+        {
+            IsImageLoaded = false;
         }
     }
 
@@ -193,6 +206,34 @@ public partial class MainWindow : Window
         UpdateTransform();
     }
 
+    /// <summary>
+    /// 会话恢复：把上次退出前保存的图层全部恢复（路径、缩放、位置、显隐），
+    /// 解码走 ImageCache 缓存命中快速加载。
+    /// </summary>
+    private void RestoreLayers()
+    {
+        foreach (var saved in _settings.Layers)
+        {
+            try
+            {
+                var layer = AddLayer(saved.Path);
+                layer.ZoomScale = saved.ZoomScale;
+                layer.UserPan = new Point(saved.PanX, saved.PanY);
+                layer.Visible = saved.Visible;
+                layer.Element.Visibility = saved.Visible ? Visibility.Visible : Visibility.Collapsed;
+            }
+            catch
+            {
+                // 单个图层恢复失败（文件被移动/删除）不影响其余图层。
+            }
+        }
+
+        if (_layers.Count > 0)
+        {
+            UpdateTransform();
+        }
+    }
+
     private void ApplyBackdrop()
     {
         Backdrop.Background = _settings.BackgroundMode switch
@@ -234,6 +275,15 @@ public partial class MainWindow : Window
             _settings.ImageTop = Top + layer.Pan.Y;
         }
 
+        // 会话恢复：保存窗口内所有图层（路径 + 缩放 + 位置 + 显隐），重启自动恢复。
+        _settings.Layers = _layers.Select(l => new SavedLayer
+        {
+            Path = l.Path,
+            ZoomScale = l.ZoomScale,
+            PanX = l.UserPan.X,
+            PanY = l.UserPan.Y,
+            Visible = l.Visible,
+        }).ToList();
         SettingsService.Save(_settings);
     }
 

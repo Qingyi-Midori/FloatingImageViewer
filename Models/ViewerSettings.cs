@@ -70,4 +70,21 @@ public sealed class ViewerSettings
     public double ImageLeft { get; set; } = double.NaN;
 
     public double ImageTop { get; set; } = double.NaN;
+
+    /// <summary>会话恢复：上次退出前窗口内的所有图层（重启后自动恢复，解码走 ImageCache）。</summary>
+    public List<SavedLayer> Layers { get; set; } = new();
+}
+
+/// <summary>单个图层的会话状态。</summary>
+public sealed class SavedLayer
+{
+    public string Path { get; set; } = string.Empty;
+
+    public double ZoomScale { get; set; } = 1.0;
+
+    public double PanX { get; set; }
+
+    public double PanY { get; set; }
+
+    public bool Visible { get; set; } = true;
 }
