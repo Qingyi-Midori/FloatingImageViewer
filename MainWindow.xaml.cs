@@ -1548,11 +1548,26 @@ public partial class MainWindow : Window
 
     #region 剪贴板监听
 
-    /// <summary>记录当前剪贴板图片为基线：开启监听/启动时已有的复制内容不再粘贴，之后的新复制才生效。</summary>
+    /// <summary>
+    /// 记录当前剪贴板内容为基线（图像数据或文件列表）：开启监听/启动时已有的复制内容不再粘贴，
+    /// 之后的新复制才生效。
+    /// </summary>
     private void ResetClipboardBaseline()
     {
         try
         {
+            if (Clipboard.ContainsFileDropList())
+            {
+                var files = Clipboard.GetFileDropList().Cast<string>()
+                    .Where(ImageFileService.IsSupportedImage)
+                    .ToList();
+                if (files.Count > 0)
+                {
+                    _lastClipboardFingerprint = string.Join(";", files.Select(BuildCacheKey));
+                    return;
+                }
+            }
+
             if (Clipboard.ContainsImage())
             {
                 var current = Clipboard.GetImage();
@@ -1627,7 +1642,8 @@ public partial class MainWindow : Window
     }
 
     /// <summary>
-    /// 批量粘贴剪贴板中的图片文件：每张添加为图层，按“窗口重叠”样式依次向右下错位层叠。
+    /// 批量粘贴剪贴板中的图片文件：每张添加为图层（缩放限制为屏幕 75%），
+    /// 按“窗口重叠”样式依次向右下错位层叠。
     /// </summary>
     private void PasteClipboardFiles(List<string> paths)
     {
@@ -1637,7 +1653,7 @@ public partial class MainWindow : Window
             try
             {
                 var layer = AddLayer(paths[i]);
-                ApplyZoomMode();
+                ApplyClipboardScale(layer, layer.Source);
                 layer.UserPan = new Point(i * overlapOffset, i * overlapOffset);
                 UpdateTransform();
             }
@@ -1648,15 +1664,21 @@ public partial class MainWindow : Window
         }
     }
 
-    /// <summary>把剪贴板图片添加为图层，缩放限制为不超过屏幕宽/高的 75%（不放大原始小图）。</summary>
-    private void AddClipboardLayer(BitmapSource image)
+    /// <summary>把剪贴板内容缩放限制为不超过屏幕宽/高的 75%（原始小图不放大）。</summary>
+    private void ApplyClipboardScale(ImageLayer layer, BitmapSource image)
     {
-        var layer = AddLayer("剪贴板图片", image);
         var workArea = ScreenService.GetWorkArea(this);
         double fit = Math.Min(workArea.Width / image.PixelWidth, workArea.Height / image.PixelHeight);
         layer.ZoomScale = Math.Min(1.0, fit * 0.75);
         layer.UserPan = new Point(0, 0);
         UpdateTransform();
+    }
+
+    /// <summary>把剪贴板图片添加为图层（缩放限制为不超过屏幕宽/高的 75%）。</summary>
+    private void AddClipboardLayer(BitmapSource image)
+    {
+        var layer = AddLayer("剪贴板图片", image);
+        ApplyClipboardScale(layer, image);
     }
 
     /// <summary>轻量内容指纹：尺寸 + 固定 16 个采样像素（同一图片每次解码结果一致，不同图片大概率不同）。</summary>
