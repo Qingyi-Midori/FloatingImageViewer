@@ -1,5 +1,6 @@
 using System.ComponentModel;
 using System.IO;
+using System.Text;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Controls.Primitives;
@@ -34,8 +35,7 @@ public partial class MainWindow : Window
     private readonly DispatcherTimer _qualityTimer;
     private readonly DispatcherTimer _clipboardTimer;
     private bool _clipboardWatch;
-    private BitmapSource? _lastClipboardImage;
-    private DateTime _lastClipboardAdd;
+    private string? _lastClipboardFingerprint;
     private readonly TranslateTransform _slideTransform = new();
     private readonly List<ImageLayer> _layers = new();
     private ImageLayer? _activeLayer;
@@ -1102,7 +1102,7 @@ public partial class MainWindow : Window
             _clipboardTimer.IsEnabled = _clipboardWatch;
             if (_clipboardWatch)
             {
-                _lastClipboardImage = null; // 开启后首次复制立即生效
+                _lastClipboardFingerprint = null; // 开启后首次复制立即生效
             }
         }));
 
@@ -1592,7 +1592,7 @@ public partial class MainWindow : Window
 
     /// <summary>
     /// 轮询剪贴板：开启监听后，在任何应用中复制图片都会自动粘贴到屏幕（作为新图层）。
-    /// 去重：与上次引用相同或 1 秒内已添加则忽略。
+    /// 去重：Clipboard.GetImage 每次返回新实例，引用比较无效，改用内容指纹（尺寸 + 采样像素）。
     /// </summary>
     private void ClipboardTimer_Tick(object? sender, EventArgs e)
     {
@@ -1609,15 +1609,18 @@ public partial class MainWindow : Window
             }
 
             var image = Clipboard.GetImage();
-            if (image is null ||
-                ReferenceEquals(image, _lastClipboardImage) ||
-                DateTime.Now - _lastClipboardAdd < TimeSpan.FromSeconds(1))
+            if (image is null)
             {
                 return;
             }
 
-            _lastClipboardImage = image;
-            _lastClipboardAdd = DateTime.Now;
+            var fingerprint = ClipboardFingerprint(image);
+            if (fingerprint == _lastClipboardFingerprint)
+            {
+                return; // 剪贴板仍是同一张图，不重复粘贴
+            }
+
+            _lastClipboardFingerprint = fingerprint;
             AddLayer("剪贴板图片", image);
             ApplyZoomMode();
         }
@@ -1625,6 +1628,25 @@ public partial class MainWindow : Window
         {
             // 剪贴板被占用等瞬时异常忽略。
         }
+    }
+
+    /// <summary>轻量内容指纹：尺寸 + 固定 16 个采样像素（同一图片每次解码结果一致，不同图片大概率不同）。</summary>
+    private static string ClipboardFingerprint(BitmapSource image)
+    {
+        var sb = new StringBuilder();
+        sb.Append(image.PixelWidth).Append('x').Append(image.PixelHeight);
+        int w = Math.Max(image.PixelWidth, 1);
+        int h = Math.Max(image.PixelHeight, 1);
+        var pixel = new byte[4];
+        for (int i = 0; i < 16; i++)
+        {
+            int x = (i * 7) % w;
+            int y = (i * 11) % h;
+            image.CopyPixels(new Int32Rect(x, y, 1, 1), pixel, 4, 0);
+            sb.Append('-').Append(pixel[0]).Append(',').Append(pixel[1]).Append(',').Append(pixel[2]);
+        }
+
+        return sb.ToString();
     }
 
     #endregion
