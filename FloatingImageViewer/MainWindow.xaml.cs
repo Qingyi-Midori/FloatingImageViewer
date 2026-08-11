@@ -32,6 +32,10 @@ public partial class MainWindow : Window
     private readonly DispatcherTimer _slideTimer;
     private readonly DispatcherTimer _saveTimer;
     private readonly DispatcherTimer _qualityTimer;
+    private readonly DispatcherTimer _clipboardTimer;
+    private bool _clipboardWatch;
+    private BitmapSource? _lastClipboardImage;
+    private DateTime _lastClipboardAdd;
     private readonly TranslateTransform _slideTransform = new();
     private readonly List<ImageLayer> _layers = new();
     private ImageLayer? _activeLayer;
@@ -123,6 +127,9 @@ public partial class MainWindow : Window
             _qualityTimer.Stop();
             ApplyAntiAliasing();
         };
+        // 剪贴板监听：轮询系统剪贴板，发现新图片自动粘贴为图层（开关默认关闭）。
+        _clipboardTimer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(500) };
+        _clipboardTimer.Tick += ClipboardTimer_Tick;
         BuildContextMenu();
         // 图片对比层：位于图层之上、黑切之下。
         RootGrid.Children.Insert(1, _compareCanvas);
@@ -1089,6 +1096,15 @@ public partial class MainWindow : Window
             Topmost = _settings.Topmost;
             SaveSettings();
         }));
+        menu.Items.Add(CreateCheckItem("剪贴板监听", _clipboardWatch, () =>
+        {
+            _clipboardWatch = !_clipboardWatch;
+            _clipboardTimer.IsEnabled = _clipboardWatch;
+            if (_clipboardWatch)
+            {
+                _lastClipboardImage = null; // 开启后首次复制立即生效
+            }
+        }));
 
         // 添加图片是主入口（顶层直接点击）；图层管理作为子菜单。
         menu.Items.Add(CreateItem("添加图片...", AddImageFile));
@@ -1571,6 +1587,47 @@ public partial class MainWindow : Window
     #endregion
 
     #region 功能操作
+
+    #region 剪贴板监听
+
+    /// <summary>
+    /// 轮询剪贴板：开启监听后，在任何应用中复制图片都会自动粘贴到屏幕（作为新图层）。
+    /// 去重：与上次引用相同或 1 秒内已添加则忽略。
+    /// </summary>
+    private void ClipboardTimer_Tick(object? sender, EventArgs e)
+    {
+        if (!_clipboardWatch || _compareActive || _mosaicActive)
+        {
+            return;
+        }
+
+        try
+        {
+            if (!Clipboard.ContainsImage())
+            {
+                return;
+            }
+
+            var image = Clipboard.GetImage();
+            if (image is null ||
+                ReferenceEquals(image, _lastClipboardImage) ||
+                DateTime.Now - _lastClipboardAdd < TimeSpan.FromSeconds(1))
+            {
+                return;
+            }
+
+            _lastClipboardImage = image;
+            _lastClipboardAdd = DateTime.Now;
+            AddLayer("剪贴板图片", image);
+            ApplyZoomMode();
+        }
+        catch
+        {
+            // 剪贴板被占用等瞬时异常忽略。
+        }
+    }
+
+    #endregion
 
     #region 框选马赛克
 
@@ -2574,6 +2631,7 @@ public partial class MainWindow : Window
     {
         _saveTimer.Stop();
         _slideTimer.Stop();
+        _clipboardTimer.Stop();
         CancelTransition();
         foreach (var layer in _layers)
         {
