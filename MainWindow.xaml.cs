@@ -12,7 +12,6 @@ using System.Windows.Media.Imaging;
 using System.Windows.Threading;
 using FloatingImageViewer.Models;
 using FloatingImageViewer.Services;
-using FloatingImageViewer.Views;
 using Microsoft.Win32;
 
 namespace FloatingImageViewer;
@@ -61,6 +60,45 @@ public partial class MainWindow : Window
         Foreground = new SolidColorBrush(Color.FromArgb(240, 224, 224, 224)),
         FontSize = 12,
     };
+
+    // 内联输入面板（替代数字/滑块弹窗，UI 与菜单统一）
+    private bool _inputActive;
+    private bool _inputSliderMode;
+    private Action<double>? _inputCommit;
+    private Action<double>? _inputLive;
+    private string _inputFormat = "{0:0}";
+    private double _inputCurrent;
+    private readonly Canvas _inputCanvas = new();
+    private readonly Border _inputPanel = new()
+    {
+        Background = new SolidColorBrush(Color.FromArgb(235, 30, 30, 30)),
+        CornerRadius = new CornerRadius(10),
+        Padding = new Thickness(14, 12, 14, 12),
+        Width = 260,
+        Visibility = Visibility.Collapsed,
+    };
+    private readonly TextBlock _inputTitle = new()
+    {
+        Foreground = new SolidColorBrush(Color.FromArgb(240, 224, 224, 224)),
+        FontSize = 13,
+        FontWeight = FontWeights.SemiBold,
+        Margin = new Thickness(0, 0, 0, 8),
+    };
+    private readonly Slider _inputSlider = new() { Minimum = 0, Maximum = 100, Margin = new Thickness(0, 4, 0, 0) };
+    private readonly TextBox _inputTextBox = new()
+    {
+        Margin = new Thickness(0, 4, 0, 0),
+        FontSize = 13,
+    };
+    private readonly TextBlock _inputValue = new()
+    {
+        Foreground = new SolidColorBrush(Color.FromArgb(220, 79, 195, 247)),
+        FontSize = 13,
+        HorizontalAlignment = HorizontalAlignment.Right,
+        Margin = new Thickness(0, 4, 0, 0),
+    };
+    private readonly Button _inputOk = new() { Content = "确定", Width = 72, Margin = new Thickness(0, 10, 8, 0) };
+    private readonly Button _inputCancel = new() { Content = "取消", Width = 72, Margin = new Thickness(0, 10, 0, 0) };
 
     // 图片对比模式
     private bool _compareActive;
@@ -156,6 +194,57 @@ public partial class MainWindow : Window
         _infoCanvas.Children.Add(_infoPanel);
         RootGrid.Children.Add(_infoCanvas);
         _infoPanelEnabled = _settings.InfoPanel;
+        // 内联输入面板（最上层，替代数字/滑块弹窗）。
+        var inputButtons = new StackPanel
+        {
+            Orientation = Orientation.Horizontal,
+            HorizontalAlignment = HorizontalAlignment.Right,
+        };
+        inputButtons.Children.Add(_inputOk);
+        inputButtons.Children.Add(_inputCancel);
+        var inputLayout = new StackPanel();
+        inputLayout.Children.Add(_inputTitle);
+        inputLayout.Children.Add(_inputSlider);
+        inputLayout.Children.Add(_inputTextBox);
+        inputLayout.Children.Add(_inputValue);
+        inputLayout.Children.Add(inputButtons);
+        _inputPanel.Child = inputLayout;
+        _inputCanvas.Children.Add(_inputPanel);
+        Canvas.SetLeft(_inputPanel, (Width - _inputPanel.Width) / 2.0);
+        Canvas.SetTop(_inputPanel, 48);
+        RootGrid.Children.Add(_inputCanvas);
+        _inputSlider.ValueChanged += (_, _) =>
+        {
+            if (!_inputActive)
+            {
+                return;
+            }
+
+            var value = _inputSlider.Value;
+            _inputValue.Text = string.Format(_inputFormat, value);
+            _inputLive?.Invoke(value);
+        };
+        _inputOk.Click += (_, _) =>
+        {
+            if (!_inputActive)
+            {
+                return;
+            }
+
+            double value = _inputSliderMode ? _inputSlider.Value : ParseInputText();
+            CloseInlineInput();
+            _inputCommit?.Invoke(value);
+        };
+        _inputCancel.Click += (_, _) =>
+        {
+            if (!_inputActive)
+            {
+                return;
+            }
+
+            CloseInlineInput();
+            _inputLive?.Invoke(_inputCurrent); // 取消恢复原值
+        };
         // 会话恢复：有历史图层则恢复上次会话，否则按传入路径加载。
         if (_settings.Layers.Count > 0)
         {
@@ -672,7 +761,7 @@ public partial class MainWindow : Window
 
     private void Window_PreviewMouseWheel(object sender, MouseWheelEventArgs e)
     {
-        if (_mosaicActive)
+        if (_inputActive || _mosaicActive)
         {
             e.Handled = true;
             return;
@@ -772,6 +861,12 @@ public partial class MainWindow : Window
 
     private void Window_PreviewMouseDown(object sender, MouseButtonEventArgs e)
     {
+        if (_inputActive)
+        {
+            e.Handled = true;
+            return;
+        }
+
         if (e.ChangedButton != MouseButton.Middle)
         {
             return;
@@ -841,9 +936,25 @@ public partial class MainWindow : Window
         }
     }
 
+    /// <summary>鼠标移出窗口时隐藏图片信息面板（输入面板打开时不干预）。</summary>
+    private void Window_MouseLeave(object sender, MouseEventArgs e)
+    {
+        if (_inputActive)
+        {
+            return;
+        }
+
+        HideInfoPanel();
+    }
+
     private void Window_PreviewMouseMove(object sender, MouseEventArgs e)
     {
         var position = e.GetPosition(this);
+        if (_inputActive)
+        {
+            return;
+        }
+
         if (_compareActive)
         {
             if (_compareDraggingSplit)
@@ -914,6 +1025,11 @@ public partial class MainWindow : Window
 
     private void Window_MouseLeftButtonDown(object sender, MouseButtonEventArgs e)
     {
+        if (_inputActive)
+        {
+            return;
+        }
+
         if (_mosaicActive)
         {
             BeginMosaicSelection(e);
@@ -1113,6 +1229,12 @@ public partial class MainWindow : Window
 
     private void Window_ContextMenuOpening(object sender, ContextMenuEventArgs e)
     {
+        if (_inputActive)
+        {
+            e.Handled = true;
+            return;
+        }
+
         if (_mosaicActive)
         {
             // 马赛克绘制模式下：右键 = 直接退出绘制模式（效果保留在屏幕上），不弹菜单。
@@ -1230,7 +1352,19 @@ public partial class MainWindow : Window
                 ImageCache.Configure(_settings.CacheStrategy, _settings.CacheLimit);
                 SaveSettings();
             },
-            () => PickCacheLimit()));
+            () => ShowInlineInput(
+                "缓存上限",
+                _settings.CacheStrategy == "Size" ? 32 : 5,
+                _settings.CacheStrategy == "Size" ? 8192 : 500,
+                _settings.CacheLimit,
+                _settings.CacheStrategy == "Size" ? "{0:0} MB" : "{0:0} 张",
+                slider: true,
+                value =>
+                {
+                    _settings.CacheLimit = (int)value;
+                    ImageCache.Configure(_settings.CacheStrategy, _settings.CacheLimit);
+                    SaveSettings();
+                })));
 
         submenu.Items.Add(CreateItem("清除缓存", () =>
         {
@@ -1239,11 +1373,6 @@ public partial class MainWindow : Window
         }));
         return submenu;
     }
-
-    private double? PickCacheLimit()
-        => _settings.CacheStrategy == "Size"
-            ? PickValue("缓存上限", 32, 8192, _settings.CacheLimit, "{0:0} MB")
-            : PickValue("缓存上限", 5, 500, _settings.CacheLimit, "{0:0} 张");
 
     /// <summary>
     /// “无用小功能”子菜单：抗锯齿（模式 + 参数预设），装饰性设置。
@@ -1335,7 +1464,7 @@ public partial class MainWindow : Window
         IReadOnlyList<(string Label, double Value)> presets,
         double current,
         Action<double> onSelect,
-        Func<double?> pickCustom)
+        Action? pickCustom)
     {
         var submenu = new MenuItem { Header = header };
         var items = new List<MenuItem>();
@@ -1359,16 +1488,8 @@ public partial class MainWindow : Window
         var custom = new MenuItem { Header = "自定义...", IsCheckable = true };
         custom.Click += (_, _) =>
         {
-            var picked = pickCustom();
-            if (picked is double value)
-            {
-                SetGroupChecked(items, null);
-                onSelect(value);
-            }
-            else
-            {
-                custom.IsChecked = false;
-            }
+            custom.IsChecked = false; // 自定义值不落在预设上，不显示勾选
+            pickCustom?.Invoke();
         };
         items.Add(custom);
         submenu.Items.Add(custom);
@@ -1403,22 +1524,20 @@ public partial class MainWindow : Window
                 Opacity = value / 100.0;
                 SaveSettings();
             },
-            () => PickOpacityLive());
-    }
-
-    /// <summary>不透明度自定义：拖动滑块实时生效，确定后保存，取消恢复原值。</summary>
-    private double? PickOpacityLive()
-    {
-        var original = _settings.OpacityPercent;
-        var dialog = new SliderDialog("不透明度", 0, 100, _settings.OpacityPercent, "{0:0}%") { Owner = this };
-        dialog.ValueChanged += value => Opacity = value / 100.0;
-        if (dialog.ShowDialog() == true && dialog.ResultValue is double value)
-        {
-            return value;
-        }
-
-        Opacity = original / 100.0;
-        return null;
+            () => ShowInlineInput(
+                "不透明度",
+                0,
+                100,
+                _settings.OpacityPercent,
+                "{0:0}%",
+                slider: true,
+                value =>
+                {
+                    _settings.OpacityPercent = (int)value;
+                    Opacity = value / 100.0;
+                    SaveSettings();
+                },
+                value => Opacity = value / 100.0)); // 拖动滑块实时生效，取消自动恢复
     }
 
     private MenuItem CreateIntervalSubmenu()
@@ -1445,7 +1564,23 @@ public partial class MainWindow : Window
 
                 SaveSettings();
             },
-            () => PickValue("轮播间隔", 1, 60, _settings.SlideshowIntervalSeconds, "{0:0} 秒"));
+            () => ShowInlineInput(
+                "轮播间隔",
+                1,
+                60,
+                _settings.SlideshowIntervalSeconds,
+                "{0:0} 秒",
+                slider: true,
+                value =>
+                {
+                    _settings.SlideshowIntervalSeconds = (int)value;
+                    if (_slideshowPlaying)
+                    {
+                        ResumeSlideshow();
+                    }
+
+                    SaveSettings();
+                }));
     }
 
     private MenuItem CreateTransitionSubmenu()
@@ -1485,12 +1620,18 @@ public partial class MainWindow : Window
                 _settings.TransitionDurationMs = (int)value;
                 SaveSettings();
             },
-            () => PickNumber(
+            () => ShowInlineInput(
                 "切换动画时间",
                 50,
                 3000,
                 _settings.TransitionDurationMs,
-                "请输入毫秒数值（50 – 3000）")));
+                "{0:0} ms",
+                slider: false,
+                value =>
+                {
+                    _settings.TransitionDurationMs = (int)value;
+                    SaveSettings();
+                })));
 
         transition.Items.Add(CreateRadioSubmenu(
             "切入方向",
@@ -1509,38 +1650,6 @@ public partial class MainWindow : Window
             }));
 
         return transition;
-    }
-
-    private double? PickValue(
-        string title,
-        double min,
-        double max,
-        double current,
-        string format)
-    {
-        var dialog = new SliderDialog(title, min, max, current, format) { Owner = this };
-        if (dialog.ShowDialog() == true && dialog.ResultValue is double value)
-        {
-            return value;
-        }
-
-        return null;
-    }
-
-    private double? PickNumber(
-        string title,
-        int min,
-        int max,
-        int current,
-        string hint)
-    {
-        var dialog = new NumberDialog(title, min, max, current, hint) { Owner = this };
-        if (dialog.ShowDialog() == true && dialog.ResultValue is int value)
-        {
-            return value;
-        }
-
-        return null;
     }
 
     private MenuItem CreateSlideshowItem()
@@ -2040,19 +2149,19 @@ public partial class MainWindow : Window
             new[] { ("8 px", 8d), ("16 px", 16d), ("32 px", 32d), ("64 px", 64d) },
             _mosaicBlockPx,
             value => _mosaicBlockPx = value,
-            () => PickNumber("马赛克大小", 2, 200, (int)_mosaicBlockPx, "请输入像素数值（2 – 200）")));
+            () => ShowInlineInput("马赛克大小", 2, 200, _mosaicBlockPx, "{0:0} px", slider: false, value => _mosaicBlockPx = value)));
         submenu.Items.Add(CreateValueSubmenu(
             "模糊像素",
             new[] { ("4 px", 4d), ("8 px", 8d), ("16 px", 16d), ("32 px", 32d) },
             _mosaicBlurPx,
             value => _mosaicBlurPx = value,
-            () => PickNumber("模糊像素", 1, 100, (int)_mosaicBlurPx, "请输入像素数值（1 – 100）")));
+            () => ShowInlineInput("模糊像素", 1, 100, _mosaicBlurPx, "{0:0} px", slider: false, value => _mosaicBlurPx = value)));
         submenu.Items.Add(CreateValueSubmenu(
             "噪声像素",
             new[] { ("4 px", 4d), ("8 px", 8d), ("16 px", 16d), ("32 px", 32d) },
             _mosaicSmudgePx,
             value => _mosaicSmudgePx = value,
-            () => PickNumber("噪声像素", 1, 100, (int)_mosaicSmudgePx, "请输入像素数值（1 – 100）")));
+            () => ShowInlineInput("噪声像素", 1, 100, _mosaicSmudgePx, "{0:0} px", slider: false, value => _mosaicSmudgePx = value)));
         submenu.Items.Add(CreateRadioSubmenu(
             "纯色",
             new[]
@@ -2402,6 +2511,51 @@ public partial class MainWindow : Window
                 HideInfoPanel();
             }
         });
+
+    /// <summary>
+    /// 打开内联输入面板（替代数字/滑块弹窗，UI 与菜单统一）：
+    /// 滑块模式实时预览（onLive），数字模式文本框输入；确定提交，取消恢复原值。
+    /// </summary>
+    private void ShowInlineInput(
+        string title,
+        double min,
+        double max,
+        double current,
+        string format,
+        bool slider,
+        Action<double> onCommit,
+        Action<double>? onLive = null)
+    {
+        _inputActive = true;
+        _inputSliderMode = slider;
+        _inputCommit = onCommit;
+        _inputLive = onLive;
+        _inputFormat = format;
+        _inputCurrent = current;
+        _inputTitle.Text = title;
+        _inputSlider.Minimum = min;
+        _inputSlider.Maximum = max;
+        _inputSlider.Value = current;
+        _inputSlider.Visibility = slider ? Visibility.Visible : Visibility.Collapsed;
+        _inputTextBox.Visibility = slider ? Visibility.Collapsed : Visibility.Visible;
+        _inputTextBox.Text = current.ToString("0.##");
+        _inputValue.Text = string.Format(format, current);
+        _inputPanel.Visibility = Visibility.Visible;
+        if (!slider)
+        {
+            _inputTextBox.Focus();
+            _inputTextBox.SelectAll();
+        }
+    }
+
+    private void CloseInlineInput()
+    {
+        _inputActive = false;
+        _inputPanel.Visibility = Visibility.Collapsed;
+    }
+
+    private double ParseInputText()
+        => double.TryParse(_inputTextBox.Text, out var value) ? value : _inputCurrent;
 
     /// <summary>选择并批量添加多张图片作为新图层（依次置于图层栈顶，可多选）。</summary>
     private void AddImageFile()

@@ -9,7 +9,6 @@ using System.Windows.Threading;
 using FloatingImageViewer;
 using FloatingImageViewer.Models;
 using FloatingImageViewer.Services;
-using FloatingImageViewer.Views;
 
 internal static class Program
 {
@@ -37,8 +36,6 @@ internal static class Program
         TestUiMenuAndZoom();
         TestGifAnimation();
         TestMoveResizeSync();
-        TestSliderDialog();
-        TestNumberDialog();
         TestNoClipping();
         TestZoomCap();
         TestComputeDownsample();
@@ -486,33 +483,6 @@ Assert(clamped.SlideTransition == "Fade" && clamped.SlideDirection == "Left", "�
             window.Close();
             File.Delete(png);
         }
-    }
-
-    private static void TestSliderDialog()
-    {
-        var dialog = new SliderDialog("切换动画时间", 50, 3000, 700, "{0:0} ms");
-        var sliderField = typeof(SliderDialog).GetField(
-            "ValueSlider",
-            BindingFlags.Instance | BindingFlags.NonPublic | BindingFlags.Public);
-        Assert(sliderField is not null, "滑块字段存在");
-        var slider = (Slider)sliderField!.GetValue(dialog)!;
-        Assert(slider.Minimum == 50 && slider.Maximum == 3000, "滑块范围");
-        Assert(Math.Abs(slider.Value - 700) < 1e-9, "滑块初值");
-        double? live = null;
-        dialog.ValueChanged += v => live = v;
-        slider.Value = 55;
-        Assert(live is 55.0, "滑块变化实时回调");
-    }
-
-    private static void TestNumberDialog()
-    {
-        var dialog = new NumberDialog("切换动画时间", 50, 3000, 700, "请输入毫秒数值");
-        var boxField = typeof(NumberDialog).GetField(
-            "ValueBox",
-            BindingFlags.Instance | BindingFlags.NonPublic | BindingFlags.Public);
-        Assert(boxField is not null, "数字输入框字段存在");
-        var box = (TextBox)boxField!.GetValue(dialog)!;
-        Assert(box.Text == "700", "数字输入框初值");
     }
 
     private static void TestNoClipping()
