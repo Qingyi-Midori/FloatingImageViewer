@@ -16,6 +16,9 @@ public sealed class ViewerSettings
 
     public bool Topmost { get; set; } = true;
 
+    /// <summary>剪贴板监听（复制图片自动粘贴到屏幕，默认关闭）。</summary>
+    public bool ClipboardWatch { get; set; }
+
     /// <summary>Fit / Original / Stretch</summary>
     public string ZoomMode { get; set; } = "Fit";
 

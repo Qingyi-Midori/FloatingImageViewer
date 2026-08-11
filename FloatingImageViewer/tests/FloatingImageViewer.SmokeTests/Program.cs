@@ -66,6 +66,7 @@ internal static class Program
             Width = 800,
             Height = 600,
     Topmost = false,
+    ClipboardWatch = true,
     ZoomMode = "Stretch",
     BackgroundMode = "Checkerboard",
     OpacityPercent = 55,
@@ -88,6 +89,7 @@ var loaded = SettingsService.Load();
 Assert(loaded.ImageLeft == 12.5 && loaded.ImageTop == 34.25, "图片位置往返");
         Assert(loaded.Width == 800 && loaded.Height == 600, "尺寸往返");
         Assert(!loaded.Topmost, "置顶往返");
+        Assert(loaded.ClipboardWatch, "剪贴板监听往返");
         Assert(loaded.ZoomMode == "Stretch", "缩放往返");
         Assert(loaded.BackgroundMode == "Checkerboard", "背景往返");
         Assert(loaded.OpacityPercent == 55, "透明度往返");

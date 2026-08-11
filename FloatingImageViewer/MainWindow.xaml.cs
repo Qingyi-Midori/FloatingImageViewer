@@ -107,6 +107,10 @@ public partial class MainWindow : Window
         _settings = SettingsService.Load();
         ApplyPersistedState();
         ImageCache.Configure(_settings.CacheStrategy, _settings.CacheLimit);
+        _clipboardWatch = _settings.ClipboardWatch;
+        _clipboardTimer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(500) };
+        _clipboardTimer.Tick += ClipboardTimer_Tick;
+        _clipboardTimer.IsEnabled = _clipboardWatch;
 
         // 幻灯片划入动画作用于整个图层宿主；各图层的缩放/平移在自己的 Canvas 变换上
         //（图层元素保持原始尺寸，避免元素大于窗口时被先裁剪再缩放）。
@@ -127,9 +131,6 @@ public partial class MainWindow : Window
             _qualityTimer.Stop();
             ApplyAntiAliasing();
         };
-        // 剪贴板监听：轮询系统剪贴板，发现新图片自动粘贴为图层（开关默认关闭）。
-        _clipboardTimer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(500) };
-        _clipboardTimer.Tick += ClipboardTimer_Tick;
         BuildContextMenu();
         // 图片对比层：位于图层之上、黑切之下。
         RootGrid.Children.Insert(1, _compareCanvas);
@@ -1100,6 +1101,8 @@ public partial class MainWindow : Window
         {
             _clipboardWatch = !_clipboardWatch;
             _clipboardTimer.IsEnabled = _clipboardWatch;
+            _settings.ClipboardWatch = _clipboardWatch;
+            SaveSettings();
             if (_clipboardWatch)
             {
                 _lastClipboardFingerprint = null; // 开启后首次复制立即生效
@@ -1621,13 +1624,23 @@ public partial class MainWindow : Window
             }
 
             _lastClipboardFingerprint = fingerprint;
-            AddLayer("剪贴板图片", image);
-            ApplyZoomMode();
+            AddClipboardLayer(image);
         }
         catch
         {
             // 剪贴板被占用等瞬时异常忽略。
         }
+    }
+
+    /// <summary>把剪贴板图片添加为图层，缩放限制为不超过屏幕宽/高的 75%（不放大原始小图）。</summary>
+    private void AddClipboardLayer(BitmapSource image)
+    {
+        var layer = AddLayer("剪贴板图片", image);
+        var workArea = ScreenService.GetWorkArea(this);
+        double fit = Math.Min(workArea.Width / image.PixelWidth, workArea.Height / image.PixelHeight);
+        layer.ZoomScale = Math.Min(1.0, fit * 0.75);
+        layer.UserPan = new Point(0, 0);
+        UpdateTransform();
     }
 
     /// <summary>轻量内容指纹：尺寸 + 固定 16 个采样像素（同一图片每次解码结果一致，不同图片大概率不同）。</summary>
@@ -1815,15 +1828,26 @@ public partial class MainWindow : Window
     }
 
     /// <summary>
-    /// 中键单击（位移小于阈值）：擦除鼠标所在位置的马赛克效果层。
-    /// 图片图层不通过中键删除（避免误触导致程序退出），删除请用菜单或 Shift+中键。
+    /// 中键单击（位移小于阈值）：马赛克模式下擦除鼠标下的马赛克效果层；
+    /// 普通模式下删除鼠标下的图片图层（仅当删除后仍有图层，单图不删防止误触退出程序）。
     /// </summary>
     private void MiddleClickRemove(Point position)
     {
-        var mosaicHit = HitTestMosaicLayer(position);
-        if (mosaicHit is not null)
+        if (_mosaicActive)
         {
-            RemoveMosaicLayer(mosaicHit);
+            var mosaicHit = HitTestMosaicLayer(position);
+            if (mosaicHit is not null)
+            {
+                RemoveMosaicLayer(mosaicHit);
+            }
+
+            return;
+        }
+
+        var layerHit = HitTestLayer(position);
+        if (layerHit is not null && _layers.Count > 1)
+        {
+            RemoveLayer(layerHit);
         }
     }
 
