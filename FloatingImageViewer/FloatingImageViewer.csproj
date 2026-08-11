@@ -8,9 +8,11 @@
     <UseWPF>true</UseWPF>
     <UseWindowsForms>true</UseWindowsForms>
     <ApplicationManifest>app.manifest</ApplicationManifest>
+    <ApplicationIcon>ico\叶黎的浮图查看器.ico</ApplicationIcon>
     <AssemblyName>FloatingImageViewer</AssemblyName>
     <RootNamespace>FloatingImageViewer</RootNamespace>
     <Version>1.0.0</Version>
+    <IncludeSourceRevisionInInformationalVersion>false</IncludeSourceRevisionInInformationalVersion>
     <Authors>YeLee</Authors>
     <Description>无边框置顶浮窗看图器</Description>
     <SatelliteResourceLanguages>zh-Hans;en</SatelliteResourceLanguages>
@@ -29,6 +31,11 @@
   <ItemGroup>
     <Using Remove="System.Drawing" />
     <Using Remove="System.Windows.Forms" />
+  </ItemGroup>
+
+  <!-- 应用图标：作为嵌入资源，供托盘图标加载。 -->
+  <ItemGroup>
+    <Resource Include="ico\叶黎的浮图查看器.ico" />
   </ItemGroup>
 
 </Project>
