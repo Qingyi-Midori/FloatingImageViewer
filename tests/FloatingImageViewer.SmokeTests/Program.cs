@@ -41,6 +41,7 @@ internal static class Program
         TestComputeDownsample();
         TestLargeImageRenders();
         TestCache();
+        TestLayerOpacity();
 
         Console.WriteLine("FloatingImageViewer.SmokeTests: 全部通过");
         return 0;
@@ -65,6 +66,7 @@ internal static class Program
     Topmost = false,
     ClipboardWatch = true,
     InfoPanel = true,
+    HoverOpacityBar = false,
     ZoomMode = "Stretch",
     BackgroundMode = "Checkerboard",
     OpacityPercent = 55,
@@ -83,7 +85,7 @@ internal static class Program
     CacheLimit = 512,
     Layers = new List<SavedLayer>
     {
-        new() { Path = "C:\\a.png", ZoomScale = 2.5, PanX = 10, PanY = 20, Visible = false },
+        new() { Path = "C:\\a.png", ZoomScale = 2.5, PanX = 10, PanY = 20, Visible = false, OpacityPercent = 40 },
         new() { Path = "C:\\b.gif", ZoomScale = 1.0, Visible = true },
     },
 };
@@ -93,6 +95,7 @@ Assert(loaded.ImageLeft == 12.5 && loaded.ImageTop == 34.25, "图片位置往返
         Assert(loaded.Width == 800 && loaded.Height == 600, "尺寸往返");
         Assert(!loaded.Topmost, "置顶往返");
         Assert(loaded.ClipboardWatch && loaded.InfoPanel, "剪贴板监听/图片信息往返");
+        Assert(!loaded.HoverOpacityBar, "独立透明度条开关往返");
         Assert(loaded.ZoomMode == "Stretch", "缩放往返");
         Assert(loaded.BackgroundMode == "Checkerboard", "背景往返");
         Assert(loaded.OpacityPercent == 55, "透明度往返");
@@ -110,8 +113,10 @@ Assert(
     Math.Abs(loaded.Layers[0].ZoomScale - 2.5) < 1e-9 &&
     Math.Abs(loaded.Layers[0].PanX - 10) < 1e-9 &&
     !loaded.Layers[0].Visible &&
+    Math.Abs(loaded.Layers[0].OpacityPercent - 40) < 1e-9 &&
     loaded.Layers[1].Path == "C:\\b.gif" &&
-    loaded.Layers[1].Visible,
+    loaded.Layers[1].Visible &&
+    Math.Abs(loaded.Layers[1].OpacityPercent - 100) < 1e-9,
     "会话图层往返");
     }
 
@@ -287,6 +292,12 @@ Assert(clamped.SlideTransition == "Fade" && clamped.SlideDirection == "Left", "�
             {
                 Assert(aaHeaders.Contains(expected), "抗锯齿子菜单包含: " + expected);
             }
+
+            // 不透明度子菜单：全局透明度（展开面板）+ 独立透明度条（开关）
+            var opacityItem = menu.Items.OfType<MenuItem>().First(m => m.Header?.ToString() == "不透明度");
+            var opacityHeaders = opacityItem.Items.OfType<MenuItem>().Select(m => m.Header?.ToString()).ToList();
+            Assert(opacityHeaders.Contains("全局透明度..."), "不透明度子菜单包含全局透明度");
+            Assert(opacityHeaders.Contains("独立透明度条"), "不透明度子菜单包含独立透明度条开关");
 
             // GIF 暂停项在静态图片下应禁用
             var gifItem = menu.Items.OfType<MenuItem>().First(m => m.Header?.ToString() == "暂停GIF动画");
@@ -649,6 +660,39 @@ Assert(clamped.SlideTransition == "Fade" && clamped.SlideDirection == "Left", "�
         ImageCache.Clear();
         Assert(ImageCache.Count == 0, "清除缓存");
         ImageCache.Configure("Count", 20);
+    }
+
+    private static void TestLayerOpacity()
+    {
+        ResetSettings();
+        var png = Path.Combine(Path.GetTempPath(), "FloatingImageViewer.Tests." + Guid.NewGuid().ToString("N") + ".png");
+        SaveTestPng(png);
+        var window = new MainWindow(png);
+        try
+        {
+            var layerField = typeof(MainWindow).GetField("_activeLayer", BindingFlags.NonPublic | BindingFlags.Instance)!;
+            var layer = (ImageLayer)layerField.GetValue(window)!;
+            Assert(Math.Abs(layer.OpacityPercent - 100) < 1e-9, "图层透明度默认 100");
+            Assert(Math.Abs(layer.Canvas.Opacity - 1.0) < 1e-9, "图层 Canvas 默认不透明");
+
+            var apply = typeof(MainWindow).GetMethod("ApplyLayerOpacity", BindingFlags.NonPublic | BindingFlags.Instance)!;
+            apply.Invoke(window, new object[] { layer, 40.0 });
+            Assert(Math.Abs(layer.OpacityPercent - 40) < 1e-9, "图层透明度值");
+            Assert(Math.Abs(layer.Canvas.Opacity - 0.4) < 1e-9, "图层透明度应用到 Canvas");
+
+            var save = typeof(MainWindow).GetMethod("SaveSettings", BindingFlags.NonPublic | BindingFlags.Instance)!;
+            save.Invoke(window, null);
+            var loaded = SettingsService.Load();
+            Assert(
+                loaded.Layers.Count == 1 &&
+                Math.Abs(loaded.Layers[0].OpacityPercent - 40) < 1e-9,
+                "图层透明度持久化");
+        }
+        finally
+        {
+            window.Close();
+            File.Delete(png);
+        }
     }
 
     private static void SaveSolidPng(string path, int width, int height, Color color, double dpi)

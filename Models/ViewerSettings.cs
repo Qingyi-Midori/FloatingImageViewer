@@ -22,6 +22,9 @@ public sealed class ViewerSettings
     /// <summary>图片信息面板（鼠标悬停图片时在图片右侧显示信息，默认关闭）。</summary>
     public bool InfoPanel { get; set; }
 
+    /// <summary>独立透明度条（悬停图片时在图片下方显示，只调整该图层，默认开启）。</summary>
+    public bool HoverOpacityBar { get; set; } = true;
+
     /// <summary>Fit / Original / Stretch</summary>
     public string ZoomMode { get; set; } = "Fit";
 
@@ -90,4 +93,7 @@ public sealed class SavedLayer
     public double PanY { get; set; }
 
     public bool Visible { get; set; } = true;
+
+    /// <summary>图层自身透明度（0–100%）。</summary>
+    public double OpacityPercent { get; set; } = 100;
 }
