@@ -2271,7 +2271,7 @@ public partial class MainWindow : Window
     {
         _trayIcon = new System.Windows.Forms.NotifyIcon
         {
-            Icon = System.Drawing.SystemIcons.Application,
+            Icon = LoadAppIcon(),
             Text = "浮窗看图器",
             Visible = true,
         };
@@ -2291,6 +2291,29 @@ public partial class MainWindow : Window
                 ShowTrayMenu();
             }
         };
+    }
+
+    /// <summary>从嵌入资源加载应用图标（发布单文件后 ico 不在 exe 旁，必须走资源）。</summary>
+    private static System.Drawing.Icon LoadAppIcon()
+    {
+        try
+        {
+            var stream = Application.GetResourceStream(
+                new Uri("pack://application:,,,/ico/叶黎的浮图查看器.ico", UriKind.RelativeOrAbsolute))?.Stream;
+            if (stream is not null)
+            {
+                using (stream)
+                {
+                    return new System.Drawing.Icon(stream);
+                }
+            }
+        }
+        catch
+        {
+            // 资源加载失败回退系统图标。
+        }
+
+        return System.Drawing.SystemIcons.Application;
     }
 
     /// <summary>在鼠标位置弹出与窗口右键相同的菜单。</summary>
