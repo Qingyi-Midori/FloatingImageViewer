@@ -1,0 +1,37 @@
+<Window x:Class="FloatingImageViewer.MainWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="浮窗看图器"
+        WindowStyle="None"
+        AllowsTransparency="True"
+        Background="Transparent"
+        ResizeMode="NoResize"
+        ShowInTaskbar="False"
+        Width="640"
+        Height="480"
+        MinWidth="120"
+        MinHeight="120"
+        ContextMenuOpening="Window_ContextMenuOpening"
+        MouseLeftButtonDown="Window_MouseLeftButtonDown"
+        PreviewMouseDown="Window_PreviewMouseDown"
+        PreviewMouseUp="Window_PreviewMouseUp"
+        PreviewMouseMove="Window_PreviewMouseMove"
+        PreviewMouseWheel="Window_PreviewMouseWheel"
+        LocationChanged="Window_LocationChanged"
+        SizeChanged="Window_SizeChanged"
+        Closing="Window_Closing">
+    <Grid x:Name="RootGrid"
+          Background="Transparent"
+          ClipToBounds="True">
+        <Canvas x:Name="SlideLayer">
+            <!-- 背景与活动图层同尺寸同位置，随变换缩放/平移：只覆盖图片区域，窗口其余部分保持透明 -->
+            <Border x:Name="Backdrop" Canvas.Left="0" Canvas.Top="0" />
+            <!-- 图层宿主：每个图层一个 Canvas（含各自的 Scale/Pan 变换） -->
+            <Canvas x:Name="LayerHost" />
+        </Canvas>
+        <Border x:Name="BlackOverlay"
+                Background="Black"
+                Opacity="0"
+                IsHitTestVisible="False" />
+    </Grid>
+</Window>
