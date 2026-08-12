@@ -62,6 +62,9 @@ public sealed class ImageLayer
     /// <summary>图层自身透明度（0–100%，作用于整个图层 Canvas，不影响其他图层）。</summary>
     public double OpacityPercent { get; set; } = 100;
 
+    /// <summary>固定（锁定位置）：为 true 时该图层不可拖动，缩放/透明度/删除不受影响。</summary>
+    public bool Fixed { get; set; }
+
     /// <summary>图层自身的缩放变换（作用于 <see cref="Canvas"/>）。</summary>
     public ScaleTransform Scale { get; } = new();
 

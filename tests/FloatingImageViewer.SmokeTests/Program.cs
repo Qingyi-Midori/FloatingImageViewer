@@ -85,7 +85,7 @@ internal static class Program
     CacheLimit = 512,
     Layers = new List<SavedLayer>
     {
-        new() { Path = "C:\\a.png", ZoomScale = 2.5, PanX = 10, PanY = 20, Visible = false, OpacityPercent = 40 },
+        new() { Path = "C:\\a.png", ZoomScale = 2.5, PanX = 10, PanY = 20, Visible = false, OpacityPercent = 40, Fixed = true },
         new() { Path = "C:\\b.gif", ZoomScale = 1.0, Visible = true },
     },
 };
@@ -114,9 +114,11 @@ Assert(
     Math.Abs(loaded.Layers[0].PanX - 10) < 1e-9 &&
     !loaded.Layers[0].Visible &&
     Math.Abs(loaded.Layers[0].OpacityPercent - 40) < 1e-9 &&
+    loaded.Layers[0].Fixed &&
     loaded.Layers[1].Path == "C:\\b.gif" &&
     loaded.Layers[1].Visible &&
-    Math.Abs(loaded.Layers[1].OpacityPercent - 100) < 1e-9,
+    Math.Abs(loaded.Layers[1].OpacityPercent - 100) < 1e-9 &&
+    !loaded.Layers[1].Fixed,
     "会话图层往返");
     }
 
@@ -268,9 +270,9 @@ Assert(clamped.SlideTransition == "Fade" && clamped.SlideDirection == "Left", "�
 
             var buildMenu = typeof(MainWindow).GetMethod("BuildContextMenu", BindingFlags.NonPublic | BindingFlags.Instance)!;
             var menu = (ContextMenu)buildMenu.Invoke(window, null)!;
-            Assert(menu is not null && menu.Items.Count == 21, "菜单项数量");
+            Assert(menu is not null && menu.Items.Count == 23, "菜单项数量");
             var headers = menu!.Items.OfType<MenuItem>().Select(m => m.Header?.ToString()).ToList();
-            foreach (var expected in new[] { "窗口置顶", "剪贴板监听", "图片信息", "添加图片...", "图层", "框选马赛克", "图片对比", "缩放模式", "背景模式", "无用小功能", "不透明度（全局）", "不透明度（独立）", "图片缓存", "幻灯片放映", "暂停GIF动画", "更换图片", "关闭图片", "重置窗口", "退出程序" })
+            foreach (var expected in new[] { "窗口置顶", "剪贴板监听", "图片信息", "添加图片...", "图层", "框选马赛克", "图片对比", "缩放模式", "背景模式", "无用小功能", "不透明度（全局）", "不透明度（独立）", "固定图片（全局）", "固定图片（独立）", "图片缓存", "幻灯片放映", "暂停GIF动画", "更换图片", "关闭图片", "重置窗口", "退出程序" })
             {
                 Assert(headers.Contains(expected), "菜单包含: " + expected);
             }
@@ -705,6 +707,12 @@ Assert(clamped.SlideTransition == "Fade" && clamped.SlideDirection == "Left", "�
             apply.Invoke(window, new object[] { layer, 0.0 });
             Assert(!layer.Visible, "透明度 0 视为图层隐藏");
             Assert(layer.Element.Visibility == Visibility.Collapsed, "透明度 0 隐藏图层元素");
+
+            // 固定状态持久化
+            layer.Fixed = true;
+            save.Invoke(window, null);
+            loaded = SettingsService.Load();
+            Assert(loaded.Layers[0].Fixed, "固定状态持久化");
         }
         finally
         {
