@@ -233,17 +233,6 @@ Assert(clamped.SlideTransition == "Fade" && clamped.SlideDirection == "Left", "�
             Assert(ReferenceEquals(activeField.GetValue(window), layer2), "新图层为活动图层");
             Assert(layer2.Element.Visibility == Visibility.Visible, "新图层可见");
 
-            // 启动强制刷新（先隐藏再显示 + 重新插入）：顺序保持、显隐恢复
-            var refresh = typeof(MainWindow).GetMethod("ForceRefreshLayers", BindingFlags.NonPublic | BindingFlags.Instance)!;
-            refresh.Invoke(window, null);
-            Assert(layers[0].Element.Visibility == Visibility.Visible && layers[1].Element.Visibility == Visibility.Visible, "刷新后图层恢复显示");
-            var hostField = typeof(MainWindow).GetField("LayerHost", BindingFlags.NonPublic | BindingFlags.Instance)!;
-            var host = (Canvas)hostField.GetValue(window)!;
-            Assert(
-                ReferenceEquals(host.Children[0], layers[0].Canvas) &&
-                ReferenceEquals(host.Children[1], layers[1].Canvas),
-                "刷新后宿主图层顺序保持");
-
             // 删除活动图层后选中相邻层
             var remove = typeof(MainWindow).GetMethod("RemoveActiveLayer", BindingFlags.NonPublic | BindingFlags.Instance)!;
             remove.Invoke(window, null);
@@ -562,11 +551,7 @@ Assert(clamped.SlideTransition == "Fade" && clamped.SlideDirection == "Left", "�
             try
             {
                 window.Show();
-                // 等待启动两段式刷新完成（隐藏一帧 → 恢复显示），避免渲染时图层正处于隐藏帧
-                for (int i = 0; i < 5; i++)
-                {
-                    Dispatcher.CurrentDispatcher.Invoke(() => { }, DispatcherPriority.ApplicationIdle);
-                }
+                Dispatcher.CurrentDispatcher.Invoke(() => { }, DispatcherPriority.ApplicationIdle);
 
                 var rtb = new RenderTargetBitmap(
                     Math.Max(1, (int)Math.Round(window.Width)),
@@ -649,11 +634,7 @@ Assert(clamped.SlideTransition == "Fade" && clamped.SlideDirection == "Left", "�
         try
         {
             window.Show();
-            // 等待启动两段式刷新完成（隐藏一帧 → 恢复显示），避免渲染时图层正处于隐藏帧
-            for (int i = 0; i < 5; i++)
-            {
-                Dispatcher.CurrentDispatcher.Invoke(() => { }, DispatcherPriority.ApplicationIdle);
-            }
+            Dispatcher.CurrentDispatcher.Invoke(() => { }, DispatcherPriority.ApplicationIdle);
 
             var rtb = new RenderTargetBitmap(
                 Math.Max(1, (int)Math.Round(window.Width)),
