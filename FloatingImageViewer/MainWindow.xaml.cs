@@ -487,12 +487,29 @@ public partial class MainWindow : Window
             }
         }
 
-        // 启动强制刷新（先隐藏再显示 + 重新插入宿主，保持图层顺序）：
-        // 软件渲染下启动时多个图层同时出现可能只渲染部分图层（GIF 卡帧不动），
-        // 与"删除上一个图层后其他图层恢复正常"同机制——视觉树变化强制完整重绘。
-        // 首帧前同步摆正一次，首帧渲染完成后（ApplicationIdle）兜底再刷一次。
-        ForceRefreshLayers();
-        Dispatcher.BeginInvoke(DispatcherPriority.ApplicationIdle, ForceRefreshLayers);
+        // 启动强制刷新：同步的隐藏→显示会被 WPF 在同一布局周期内合并（渲染失效被抵消、
+        // 画面无变化），必须跨布局周期两段式提交——先隐藏并强制布局（一帧消失），
+        // 下一空闲周期再恢复显示，与"手动隐藏图层再显示"完全一致。
+        ForceRefreshLayers(); // 首帧前先摆正视觉树（内容一致，无闪烁）
+        Dispatcher.BeginInvoke(DispatcherPriority.ApplicationIdle, () =>
+        {
+            foreach (var layer in _layers)
+            {
+                layer.Element.Visibility = Visibility.Collapsed;
+            }
+
+            UpdateLayout(); // 提交隐藏状态，确保渲染失效真正入队
+
+            Dispatcher.BeginInvoke(DispatcherPriority.ApplicationIdle, () =>
+            {
+                foreach (var layer in _layers)
+                {
+                    layer.Element.Visibility = layer.Visible ? Visibility.Visible : Visibility.Collapsed;
+                }
+
+                UpdateTransform();
+            });
+        });
     }
 
     /// <summary>
