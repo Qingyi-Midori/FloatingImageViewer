@@ -562,7 +562,11 @@ Assert(clamped.SlideTransition == "Fade" && clamped.SlideDirection == "Left", "�
             try
             {
                 window.Show();
-                Dispatcher.CurrentDispatcher.Invoke(() => { }, DispatcherPriority.ApplicationIdle);
+                // 等待启动两段式刷新完成（隐藏一帧 → 恢复显示），避免渲染时图层正处于隐藏帧
+                for (int i = 0; i < 5; i++)
+                {
+                    Dispatcher.CurrentDispatcher.Invoke(() => { }, DispatcherPriority.ApplicationIdle);
+                }
 
                 var rtb = new RenderTargetBitmap(
                     Math.Max(1, (int)Math.Round(window.Width)),
@@ -645,7 +649,11 @@ Assert(clamped.SlideTransition == "Fade" && clamped.SlideDirection == "Left", "�
         try
         {
             window.Show();
-            Dispatcher.CurrentDispatcher.Invoke(() => { }, DispatcherPriority.ApplicationIdle);
+            // 等待启动两段式刷新完成（隐藏一帧 → 恢复显示），避免渲染时图层正处于隐藏帧
+            for (int i = 0; i < 5; i++)
+            {
+                Dispatcher.CurrentDispatcher.Invoke(() => { }, DispatcherPriority.ApplicationIdle);
+            }
 
             var rtb = new RenderTargetBitmap(
                 Math.Max(1, (int)Math.Round(window.Width)),
