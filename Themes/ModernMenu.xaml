@@ -276,6 +276,51 @@
         </Setter>
     </Style>
 
+    <!-- 复选框（深色圆角，与菜单一致）：固定面板等使用，选中显示薄荷绿勾 -->
+    <Style TargetType="{x:Type CheckBox}">
+        <Setter Property="Foreground" Value="#E0E0E0" />
+        <Setter Property="FontSize" Value="13" />
+        <Setter Property="Cursor" Value="Hand" />
+        <Setter Property="Template">
+            <Setter.Value>
+                <ControlTemplate TargetType="{x:Type CheckBox}">
+                    <StackPanel Orientation="Horizontal" Background="Transparent">
+                        <Border x:Name="Box"
+                                Width="16"
+                                Height="16"
+                                CornerRadius="4"
+                                Background="#2D2D30"
+                                BorderBrush="#3E3E42"
+                                BorderThickness="1"
+                                VerticalAlignment="Center">
+                            <Path x:Name="Check"
+                                  Data="M3.5 8.5 L7 12 L12.5 5"
+                                  Stroke="#C0EBD7"
+                                  StrokeThickness="2"
+                                  StrokeStartLineCap="Round"
+                                  StrokeEndLineCap="Round"
+                                  StrokeLineJoin="Round"
+                                  Visibility="Collapsed" />
+                        </Border>
+                        <ContentPresenter Margin="8,0,0,0"
+                                          VerticalAlignment="Center" />
+                    </StackPanel>
+                    <ControlTemplate.Triggers>
+                        <Trigger Property="IsChecked" Value="True">
+                            <Setter TargetName="Check" Property="Visibility" Value="Visible" />
+                        </Trigger>
+                        <Trigger Property="IsMouseOver" Value="True">
+                            <Setter TargetName="Box" Property="BorderBrush" Value="#C0EBD7" />
+                        </Trigger>
+                        <Trigger Property="IsEnabled" Value="False">
+                            <Setter Property="Foreground" Value="#6E6E70" />
+                        </Trigger>
+                    </ControlTemplate.Triggers>
+                </ControlTemplate>
+            </Setter.Value>
+        </Setter>
+    </Style>
+
     <!-- 滑块（透明度条统一样式）：无外框、胶囊控制柄、已滑过部分高亮 -->
     <Style TargetType="{x:Type Slider}">
         <Setter Property="Background" Value="Transparent" />

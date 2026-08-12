@@ -301,6 +301,12 @@ Assert(clamped.SlideTransition == "Fade" && clamped.SlideDirection == "Left", "�
             Assert(!globalOpacityItem.HasItems, "不透明度（全局）为直接点击项");
             Assert(independentOpacityItem.IsCheckable && independentOpacityItem.IsChecked, "不透明度（独立）为默认勾选开关");
 
+            // 固定图片：全局（点击打开面板）+ 独立（勾选开关）
+            var globalFixedItem = menu.Items.OfType<MenuItem>().First(m => m.Header?.ToString() == "固定图片（全局）");
+            var independentFixedItem = menu.Items.OfType<MenuItem>().First(m => m.Header?.ToString() == "固定图片（独立）");
+            Assert(!globalFixedItem.IsCheckable, "固定图片（全局）为直接点击项");
+            Assert(independentFixedItem.IsCheckable && !independentFixedItem.IsChecked, "固定图片（独立）默认未固定");
+
             // 全局透明度面板：默认只显示一个滚动条（控制当前图层），点展开才列出全部图层
             var openPanel = typeof(MainWindow).GetMethod("OpenGlobalOpacityPanel", BindingFlags.NonPublic | BindingFlags.Instance)!;
             openPanel.Invoke(window, null);
@@ -313,6 +319,22 @@ Assert(clamped.SlideTransition == "Fade" && clamped.SlideDirection == "Left", "�
             var closePanel = typeof(MainWindow).GetMethod("CloseGlobalOpacityPanel", BindingFlags.NonPublic | BindingFlags.Instance)!;
             closePanel.Invoke(window, null);
             Assert(((Border)panelField.GetValue(window)!).Visibility == Visibility.Collapsed, "全局透明度面板关闭");
+
+            // 固定图片面板：全局锁定开关 + 展开后单独固定
+            var openFixed = typeof(MainWindow).GetMethod("OpenGlobalFixedPanel", BindingFlags.NonPublic | BindingFlags.Instance)!;
+            openFixed.Invoke(window, null);
+            var fixedPanelField = typeof(MainWindow).GetField("_globalFixedPanel", BindingFlags.NonPublic | BindingFlags.Instance)!;
+            Assert(((Border)fixedPanelField.GetValue(window)!).Visibility == Visibility.Visible, "固定图片面板打开");
+            var expandFixed = typeof(MainWindow).GetMethod("ExpandGlobalFixedList", BindingFlags.NonPublic | BindingFlags.Instance)!;
+            expandFixed.Invoke(window, null);
+            var fixedRowsField = typeof(MainWindow).GetField("_globalFixedRows", BindingFlags.NonPublic | BindingFlags.Instance)!;
+            Assert(((StackPanel)fixedRowsField.GetValue(window)!).Children.Count == 1, "固定展开列表行数 = 图层数");
+            var allFixedField = typeof(MainWindow).GetField("_globalFixedAll", BindingFlags.NonPublic | BindingFlags.Instance)!;
+            ((CheckBox)allFixedField.GetValue(window)!).IsChecked = true; // 触发 ApplyGlobalFixed → 锁定所有图层
+            Assert(activeLayer.Fixed, "全局锁定所有图层");
+            var closeFixed = typeof(MainWindow).GetMethod("CloseGlobalFixedPanel", BindingFlags.NonPublic | BindingFlags.Instance)!;
+            closeFixed.Invoke(window, null);
+            Assert(((Border)fixedPanelField.GetValue(window)!).Visibility == Visibility.Collapsed, "固定图片面板关闭");
 
             // GIF 暂停项在静态图片下应禁用
             var gifItem = menu.Items.OfType<MenuItem>().First(m => m.Header?.ToString() == "暂停GIF动画");
