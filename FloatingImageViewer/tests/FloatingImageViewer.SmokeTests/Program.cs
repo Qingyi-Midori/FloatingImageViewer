@@ -268,9 +268,9 @@ Assert(clamped.SlideTransition == "Fade" && clamped.SlideDirection == "Left", "�
 
             var buildMenu = typeof(MainWindow).GetMethod("BuildContextMenu", BindingFlags.NonPublic | BindingFlags.Instance)!;
             var menu = (ContextMenu)buildMenu.Invoke(window, null)!;
-            Assert(menu is not null && menu.Items.Count == 20, "菜单项数量");
+            Assert(menu is not null && menu.Items.Count == 21, "菜单项数量");
             var headers = menu!.Items.OfType<MenuItem>().Select(m => m.Header?.ToString()).ToList();
-            foreach (var expected in new[] { "窗口置顶", "剪贴板监听", "图片信息", "添加图片...", "图层", "框选马赛克", "图片对比", "缩放模式", "背景模式", "无用小功能", "不透明度", "图片缓存", "幻灯片放映", "暂停GIF动画", "更换图片", "关闭图片", "重置窗口", "退出程序" })
+            foreach (var expected in new[] { "窗口置顶", "剪贴板监听", "图片信息", "添加图片...", "图层", "框选马赛克", "图片对比", "缩放模式", "背景模式", "无用小功能", "不透明度（全局）", "不透明度（独立）", "图片缓存", "幻灯片放映", "暂停GIF动画", "更换图片", "关闭图片", "重置窗口", "退出程序" })
             {
                 Assert(headers.Contains(expected), "菜单包含: " + expected);
             }
@@ -293,11 +293,24 @@ Assert(clamped.SlideTransition == "Fade" && clamped.SlideDirection == "Left", "�
                 Assert(aaHeaders.Contains(expected), "抗锯齿子菜单包含: " + expected);
             }
 
-            // 不透明度子菜单：全局透明度（展开面板）+ 独立透明度条（开关）
-            var opacityItem = menu.Items.OfType<MenuItem>().First(m => m.Header?.ToString() == "不透明度");
-            var opacityHeaders = opacityItem.Items.OfType<MenuItem>().Select(m => m.Header?.ToString()).ToList();
-            Assert(opacityHeaders.Contains("全局透明度..."), "不透明度子菜单包含全局透明度");
-            Assert(opacityHeaders.Contains("独立透明度条"), "不透明度子菜单包含独立透明度条开关");
+            // 不透明度首级拆分：全局（直接点击打开面板）+ 独立（勾选开关，默认开启）
+            var globalOpacityItem = menu.Items.OfType<MenuItem>().First(m => m.Header?.ToString() == "不透明度（全局）");
+            var independentOpacityItem = menu.Items.OfType<MenuItem>().First(m => m.Header?.ToString() == "不透明度（独立）");
+            Assert(!globalOpacityItem.HasItems, "不透明度（全局）为直接点击项");
+            Assert(independentOpacityItem.IsCheckable && independentOpacityItem.IsChecked, "不透明度（独立）为默认勾选开关");
+
+            // 全局透明度面板：默认只显示一个滚动条（控制当前图层），点展开才列出全部图层
+            var openPanel = typeof(MainWindow).GetMethod("OpenGlobalOpacityPanel", BindingFlags.NonPublic | BindingFlags.Instance)!;
+            openPanel.Invoke(window, null);
+            var panelField = typeof(MainWindow).GetField("_globalOpacityPanel", BindingFlags.NonPublic | BindingFlags.Instance)!;
+            Assert(((Border)panelField.GetValue(window)!).Visibility == Visibility.Visible, "全局透明度面板打开");
+            var expand = typeof(MainWindow).GetMethod("ExpandGlobalOpacityList", BindingFlags.NonPublic | BindingFlags.Instance)!;
+            expand.Invoke(window, null);
+            var rowsField = typeof(MainWindow).GetField("_globalOpacityRows", BindingFlags.NonPublic | BindingFlags.Instance)!;
+            Assert(((StackPanel)rowsField.GetValue(window)!).Children.Count == 1, "展开列表行数 = 图层数");
+            var closePanel = typeof(MainWindow).GetMethod("CloseGlobalOpacityPanel", BindingFlags.NonPublic | BindingFlags.Instance)!;
+            closePanel.Invoke(window, null);
+            Assert(((Border)panelField.GetValue(window)!).Visibility == Visibility.Collapsed, "全局透明度面板关闭");
 
             // GIF 暂停项在静态图片下应禁用
             var gifItem = menu.Items.OfType<MenuItem>().First(m => m.Header?.ToString() == "暂停GIF动画");
