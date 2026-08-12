@@ -486,6 +486,37 @@ public partial class MainWindow : Window
                 gif.Start();
             }
         }
+
+        // 启动强制刷新（先隐藏再显示 + 重新插入宿主，保持图层顺序）：
+        // 软件渲染下启动时多个图层同时出现可能只渲染部分图层（GIF 卡帧不动），
+        // 与"删除上一个图层后其他图层恢复正常"同机制——视觉树变化强制完整重绘。
+        // 首帧前同步摆正一次，首帧渲染完成后（ApplicationIdle）兜底再刷一次。
+        ForceRefreshLayers();
+        Dispatcher.BeginInvoke(DispatcherPriority.ApplicationIdle, ForceRefreshLayers);
+    }
+
+    /// <summary>
+    /// 强制刷新所有图层：先全部隐藏，从宿主重新插入（保持顺序），再按显隐状态恢复显示。
+    /// </summary>
+    private void ForceRefreshLayers()
+    {
+        foreach (var layer in _layers)
+        {
+            layer.Element.Visibility = Visibility.Collapsed;
+        }
+
+        foreach (var layer in _layers.ToList())
+        {
+            LayerHost.Children.Remove(layer.Canvas);
+            LayerHost.Children.Add(layer.Canvas);
+        }
+
+        foreach (var layer in _layers)
+        {
+            layer.Element.Visibility = layer.Visible ? Visibility.Visible : Visibility.Collapsed;
+        }
+
+        UpdateTransform();
     }
 
     private void ApplyPersistedState()
