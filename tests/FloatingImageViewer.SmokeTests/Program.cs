@@ -700,6 +700,11 @@ Assert(clamped.SlideTransition == "Fade" && clamped.SlideDirection == "Left", "�
                 loaded.Layers.Count == 1 &&
                 Math.Abs(loaded.Layers[0].OpacityPercent - 40) < 1e-9,
                 "图层透明度持久化");
+
+            // 透明度拉到 0 = 图层隐藏（不可见、不参与命中，避免找不回来）
+            apply.Invoke(window, new object[] { layer, 0.0 });
+            Assert(!layer.Visible, "透明度 0 视为图层隐藏");
+            Assert(layer.Element.Visibility == Visibility.Collapsed, "透明度 0 隐藏图层元素");
         }
         finally
         {
