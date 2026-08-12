@@ -12,6 +12,7 @@
         MinWidth="120"
         MinHeight="120"
         ContextMenuOpening="Window_ContextMenuOpening"
+        Loaded="Window_Loaded"
         MouseLeftButtonDown="Window_MouseLeftButtonDown"
         PreviewMouseDown="Window_PreviewMouseDown"
         PreviewMouseUp="Window_PreviewMouseUp"

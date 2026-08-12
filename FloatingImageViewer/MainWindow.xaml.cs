@@ -456,6 +456,31 @@ public partial class MainWindow : Window
 
     #region 启动 / 持久化
 
+    /// <summary>
+    /// 窗口首次显示前（Loaded 在首次渲染前触发）执行启动收尾：
+    /// 1) 对齐全屏——窗口未显示时 DPI/工作区可能不准确，显示后重新对齐避免图片位置偏移一跳；
+    /// 2) 启动会话恢复的 GIF——透明窗口为软件渲染，显示前启动逐帧定时器会把画面卡在某一帧
+    ///    （隐藏再显示才恢复），推迟到首次渲染前启动则正常播放。
+    /// </summary>
+    private void Window_Loaded(object sender, RoutedEventArgs e)
+    {
+        var workArea = ScreenService.GetWorkArea(this);
+        if (Math.Abs(Left - workArea.Left) > 0.5 || Math.Abs(Top - workArea.Top) > 0.5 ||
+            Math.Abs(Width - workArea.Width) > 0.5 || Math.Abs(Height - workArea.Height) > 0.5)
+        {
+            ScreenService.MoveResize(this, workArea.Left, workArea.Top, workArea.Width, workArea.Height);
+        }
+
+        UpdateTransform();
+        foreach (var layer in _layers)
+        {
+            if (layer.Gif is { IsAnimatedGif: true } gif && !gif.IsPaused)
+            {
+                gif.Start();
+            }
+        }
+    }
+
     private void ApplyPersistedState()
     {
         Topmost = _settings.Topmost;
@@ -679,6 +704,7 @@ public partial class MainWindow : Window
     /// <summary>
     /// 解码并创建图层：GIF 图层带独立播放器（每个 GIF 各自播放、互不干扰，默认播放），
     /// 静态图走解码缓存（命中时直接复用显示位图）。
+    /// 窗口未显示时（会话恢复）GIF 不立即启动，由 Window_Loaded 在首次渲染前统一启动。
     /// </summary>
     private ImageLayer CreateLayer(string path)
     {
@@ -690,7 +716,11 @@ public partial class MainWindow : Window
             var layer = new ImageLayer(path, source);
             gif.SetTarget(layer.Element);
             layer.Gif = gif;
-            gif.Start();
+            if (IsVisible)
+            {
+                gif.Start(); // 运行中新增的 GIF：窗口已显示，直接播放
+            }
+
             return layer;
         }
 
