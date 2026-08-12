@@ -178,7 +178,7 @@
         </Setter>
     </Style>
 
-    <!-- 滑块控制柄（胶囊体）：圆角矩形拇指，悬停变白、拖动变高亮蓝 -->
+    <!-- 滑块控制柄（胶囊体）：圆角矩形拇指，深色默认、悬停变亮、拖动高亮蓝 -->
     <Style x:Key="OpacitySliderThumb" TargetType="{x:Type Thumb}">
         <Setter Property="Width" Value="18" />
         <Setter Property="Height" Value="18" />
@@ -186,15 +186,50 @@
             <Setter.Value>
                 <ControlTemplate TargetType="{x:Type Thumb}">
                     <Border x:Name="ThumbBd"
-                            Background="#E0E0E0"
+                            Background="#9A9A9A"
                             CornerRadius="9"
                             SnapsToDevicePixels="True" />
                     <ControlTemplate.Triggers>
                         <Trigger Property="IsMouseOver" Value="True">
-                            <Setter TargetName="ThumbBd" Property="Background" Value="#FFFFFF" />
+                            <Setter TargetName="ThumbBd" Property="Background" Value="#D4D4D4" />
                         </Trigger>
                         <Trigger Property="IsDragging" Value="True">
                             <Setter TargetName="ThumbBd" Property="Background" Value="#4FC3F7" />
+                        </Trigger>
+                    </ControlTemplate.Triggers>
+                </ControlTemplate>
+            </Setter.Value>
+        </Setter>
+    </Style>
+
+    <!-- 按钮（深色圆角，与菜单一致）：展开/完成/确定/取消等面板按钮统一风格 -->
+    <Style TargetType="{x:Type Button}">
+        <Setter Property="Background" Value="#3E3E42" />
+        <Setter Property="Foreground" Value="#E0E0E0" />
+        <Setter Property="BorderThickness" Value="0" />
+        <Setter Property="Padding" Value="10,4" />
+        <Setter Property="FontSize" Value="13" />
+        <Setter Property="Cursor" Value="Hand" />
+        <Setter Property="Template">
+            <Setter.Value>
+                <ControlTemplate TargetType="{x:Type Button}">
+                    <Border x:Name="Bd"
+                            Background="{TemplateBinding Background}"
+                            CornerRadius="6"
+                            Padding="{TemplateBinding Padding}">
+                        <ContentPresenter HorizontalAlignment="Center"
+                                          VerticalAlignment="Center" />
+                    </Border>
+                    <ControlTemplate.Triggers>
+                        <Trigger Property="IsMouseOver" Value="True">
+                            <Setter TargetName="Bd" Property="Background" Value="#505052" />
+                        </Trigger>
+                        <Trigger Property="IsPressed" Value="True">
+                            <Setter TargetName="Bd" Property="Background" Value="#007ACC" />
+                        </Trigger>
+                        <Trigger Property="IsEnabled" Value="False">
+                            <Setter TargetName="Bd" Property="Background" Value="#2A2A2C" />
+                            <Setter Property="Foreground" Value="#6E6E70" />
                         </Trigger>
                     </ControlTemplate.Triggers>
                 </ControlTemplate>

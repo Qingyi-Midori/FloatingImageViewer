@@ -1152,7 +1152,7 @@ public partial class MainWindow : Window
         }
 
         // 悬停即选中：鼠标移到哪个图层上，滚轮缩放/双击就直接作用于该图层，
-        // 无需先点击选中；移到空白处保持当前选中图层不变（独立透明度条常驻活动图层）。
+        // 无需先点击选中；移到空白处保持当前选中图层不变，独立透明度条自动隐藏。
         var hover = HitTestLayer(position);
         if (hover is not null)
         {
@@ -1162,6 +1162,7 @@ public partial class MainWindow : Window
         else
         {
             HideInfoPanel();
+            HideHoverOpacitySlider();
         }
     }
 
@@ -2739,22 +2740,33 @@ public partial class MainWindow : Window
             HoverBarHeight).Contains(windowPoint);
     }
 
-    /// <summary>设置图层透明度（0–100）并应用，变化后调度保存。</summary>
+    /// <summary>
+    /// 设置图层透明度（0–100）并应用，变化后调度保存。
+    /// 透明度拉到 0 时视为图层被隐藏（不可见且不参与命中，避免"找不回来"），
+    /// 重新打开需从「图层」菜单勾选（会恢复到 100%）。
+    /// </summary>
     private void ApplyLayerOpacity(ImageLayer layer, double percent)
     {
         layer.OpacityPercent = Math.Clamp(percent, 0, 100);
         layer.Canvas.Opacity = layer.OpacityPercent / 100.0;
+        if (layer.OpacityPercent <= 0)
+        {
+            layer.Visible = false;
+            layer.Element.Visibility = Visibility.Collapsed;
+        }
+
         ScheduleSave();
     }
 
     /// <summary>
-    /// 更新独立透明度条：常驻显示在活动图层图片内部偏下位置（不随鼠标移出消失），
+    /// 更新独立透明度条：显示在活动图层图片内部偏下位置（不随鼠标移出消失），
     /// 只调整该图层。条自身尺寸固定，不受图片缩放影响。
+    /// 图层隐藏（透明度 0 或勾选关闭）时不显示条。
     /// </summary>
     private void UpdateHoverOpacitySlider()
     {
         if (!_hoverOpacityBarEnabled || AnyPanelActive || _compareActive || _mosaicActive
-            || _activeLayer is not { } layer)
+            || _activeLayer is not { } layer || !layer.Visible)
         {
             HideHoverOpacitySlider();
             return;
@@ -2964,6 +2976,14 @@ public partial class MainWindow : Window
                 SetActiveLayer(layer);
                 layer.Visible = !layer.Visible;
                 layer.Element.Visibility = layer.Visible ? Visibility.Visible : Visibility.Collapsed;
+                if (layer.Visible && layer.OpacityPercent <= 0)
+                {
+                    // 透明度被拉到 0 而隐藏的图层：重新打开时恢复到 100%，否则仍不可见。
+                    layer.OpacityPercent = 100;
+                    layer.Canvas.Opacity = 1.0;
+                }
+
+                UpdateHoverOpacitySlider();
                 ScheduleSave();
             };
             submenu.Items.Add(item);
