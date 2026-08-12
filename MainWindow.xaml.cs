@@ -1534,7 +1534,7 @@ public partial class MainWindow : Window
                 _settings.CacheStrategy == "Size" ? 8192 : 500,
                 _settings.CacheLimit,
                 _settings.CacheStrategy == "Size" ? "{0:0} MB" : "{0:0} 张",
-                slider: true,
+                slider: false,
                 value =>
                 {
                     _settings.CacheLimit = (int)value;
@@ -1710,7 +1710,7 @@ public partial class MainWindow : Window
                 60,
                 _settings.SlideshowIntervalSeconds,
                 "{0:0} 秒",
-                slider: true,
+                slider: false,
                 value =>
                 {
                     _settings.SlideshowIntervalSeconds = (int)value;
