@@ -434,11 +434,12 @@ public partial class MainWindow : Window
             CloseInlineInput();
             _inputLive?.Invoke(_inputCurrent); // 取消恢复原值
         };
-        // 会话恢复：有历史图层则恢复上次会话，否则按传入路径加载。
+        // 会话恢复：有历史图层时不在构造中恢复（窗口未显示时 DPI/工作区不准确、
+        // 软件渲染管线未就绪，会导致 GIF 卡帧、位置偏移），统一延迟到 Window_Loaded
+        // 首次渲染前恢复；否则按传入路径加载。
         if (_settings.Layers.Count > 0)
         {
-            RestoreLayers();
-            IsImageLoaded = _layers.Count > 0;
+            IsImageLoaded = true; // 图层由 Window_Loaded 恢复
         }
         else if (imagePath is not null)
         {
@@ -457,10 +458,10 @@ public partial class MainWindow : Window
     #region 启动 / 持久化
 
     /// <summary>
-    /// 窗口首次显示前（Loaded 在首次渲染前触发）执行启动收尾：
-    /// 1) 对齐全屏——窗口未显示时 DPI/工作区可能不准确，显示后重新对齐避免图片位置偏移一跳；
-    /// 2) 启动会话恢复的 GIF——透明窗口为软件渲染，显示前启动逐帧定时器会把画面卡在某一帧
-    ///    （隐藏再显示才恢复），推迟到首次渲染前启动则正常播放。
+    /// 窗口首次渲染前（Loaded 在布局完成后、首帧绘制前触发）执行启动收尾：
+    /// 1) 恢复上次会话的图层——此时 DPI/工作区已准确、软件渲染管线已就绪，
+    ///    GIF 逐帧定时器在显示后启动、图层位置直接按正确尺寸计算，避免启动卡帧与位置偏移；
+    /// 2) 对齐全屏尺寸（窗口未显示时 DPI 可能不准，显示后重新对齐）。
     /// </summary>
     private void Window_Loaded(object sender, RoutedEventArgs e)
     {
@@ -471,7 +472,13 @@ public partial class MainWindow : Window
             ScreenService.MoveResize(this, workArea.Left, workArea.Top, workArea.Width, workArea.Height);
         }
 
+        if (_layers.Count == 0 && _settings.Layers.Count > 0)
+        {
+            RestoreLayers();
+        }
+
         UpdateTransform();
+        // GIF 兜底启动（窗口已显示时 CreateLayer 已直接启动，这里保证会话恢复的也启动）。
         foreach (var layer in _layers)
         {
             if (layer.Gif is { IsAnimatedGif: true } gif && !gif.IsPaused)

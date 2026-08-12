@@ -11,7 +11,7 @@
     <ApplicationIcon>ico\叶黎的浮图查看器.ico</ApplicationIcon>
     <AssemblyName>FloatingImageViewer</AssemblyName>
     <RootNamespace>FloatingImageViewer</RootNamespace>
-    <Version>2.2.2</Version>
+    <Version>2.2.3</Version>
     <IncludeSourceRevisionInInformationalVersion>false</IncludeSourceRevisionInInformationalVersion>
     <Authors>YeLee</Authors>
     <Description>无边框置顶浮窗看图器</Description>
