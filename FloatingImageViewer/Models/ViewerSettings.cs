@@ -96,4 +96,7 @@ public sealed class SavedLayer
 
     /// <summary>图层自身透明度（0–100%）。</summary>
     public double OpacityPercent { get; set; } = 100;
+
+    /// <summary>固定（锁定位置，不可拖动）。</summary>
+    public bool Fixed { get; set; }
 }

@@ -458,6 +458,7 @@ public partial class MainWindow : Window
                 layer.Element.Visibility = saved.Visible ? Visibility.Visible : Visibility.Collapsed;
                 layer.OpacityPercent = Math.Clamp(saved.OpacityPercent, 0, 100);
                 layer.Canvas.Opacity = layer.OpacityPercent / 100.0;
+                layer.Fixed = saved.Fixed;
             }
             catch
             {
@@ -512,7 +513,7 @@ public partial class MainWindow : Window
             _settings.ImageTop = Top + layer.Pan.Y;
         }
 
-        // 会话恢复：保存窗口内所有图层（路径 + 缩放 + 位置 + 显隐 + 透明度），重启自动恢复。
+        // 会话恢复：保存窗口内所有图层（路径 + 缩放 + 位置 + 显隐 + 透明度 + 固定），重启自动恢复。
         _settings.Layers = _layers.Select(l => new SavedLayer
         {
             Path = l.Path,
@@ -521,6 +522,7 @@ public partial class MainWindow : Window
             PanY = l.UserPan.Y,
             Visible = l.Visible,
             OpacityPercent = l.OpacityPercent,
+            Fixed = l.Fixed,
         }).ToList();
         SettingsService.Save(_settings);
     }
@@ -1233,6 +1235,11 @@ public partial class MainWindow : Window
         }
 
         SetActiveLayer(hit);
+        if (hit.Fixed)
+        {
+            return; // 固定（锁定位置）的图层不可拖动；缩放/透明度/双击仍可用
+        }
+
         BeginImageDrag(e);
     }
 
@@ -1479,6 +1486,26 @@ public partial class MainWindow : Window
             else
             {
                 UpdateHoverOpacitySlider();
+            }
+        }));
+        // 固定图片：独立 = 锁定鼠标所在图层（悬停即选中）；全局 = 一次锁定/解锁所有图层。
+        bool allFixed = _layers.Count > 0 && _layers.All(l => l.Fixed);
+        menu.Items.Add(CreateCheckItem("固定图片（全局）", allFixed, () =>
+        {
+            bool newState = !allFixed;
+            foreach (var layer in _layers)
+            {
+                layer.Fixed = newState;
+            }
+
+            ScheduleSave();
+        }));
+        menu.Items.Add(CreateCheckItem("固定图片（独立）", _activeLayer is { Fixed: true }, () =>
+        {
+            if (_activeLayer is { } layer)
+            {
+                layer.Fixed = !layer.Fixed;
+                ScheduleSave();
             }
         }));
         menu.Items.Add(CreateCacheSubmenu());
