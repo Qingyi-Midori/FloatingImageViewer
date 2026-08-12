@@ -93,7 +93,7 @@ public partial class MainWindow : Window
     };
     private readonly TextBlock _inputValue = new()
     {
-        Foreground = new SolidColorBrush(Color.FromArgb(220, 79, 195, 247)),
+        Foreground = new SolidColorBrush(Color.FromArgb(220, 192, 235, 215)),
         FontSize = 13,
         HorizontalAlignment = HorizontalAlignment.Right,
         Margin = new Thickness(0, 4, 0, 0),
@@ -150,7 +150,7 @@ public partial class MainWindow : Window
     private readonly Slider _globalOpacitySlider = new() { Minimum = 0, Maximum = 100 };
     private readonly TextBlock _globalOpacityPercent = new()
     {
-        Foreground = new SolidColorBrush(Color.FromArgb(220, 79, 195, 247)),
+        Foreground = new SolidColorBrush(Color.FromArgb(220, 192, 235, 215)),
         FontSize = 12,
         VerticalAlignment = VerticalAlignment.Center,
         MinWidth = 42,
@@ -180,7 +180,7 @@ public partial class MainWindow : Window
     private readonly Border _compareSplitLine = new()
     {
         Width = 2,
-        Background = new SolidColorBrush(Color.FromArgb(220, 79, 195, 247)),
+        Background = new SolidColorBrush(Color.FromArgb(220, 192, 235, 215)),
         IsHitTestVisible = false,
     };
     private readonly Canvas _compareCanvas = new() { IsHitTestVisible = false };
@@ -2080,7 +2080,7 @@ public partial class MainWindow : Window
         _mosaicPreview = null;
         _mosaicBox = new Border
         {
-            BorderBrush = new SolidColorBrush(Color.FromArgb(220, 79, 195, 247)),
+            BorderBrush = new SolidColorBrush(Color.FromArgb(220, 192, 235, 215)),
             BorderThickness = new Thickness(1.5),
             Visibility = Visibility.Collapsed,
         };
@@ -2875,7 +2875,7 @@ public partial class MainWindow : Window
 
         var percent = new TextBlock
         {
-            Foreground = new SolidColorBrush(Color.FromArgb(220, 79, 195, 247)),
+            Foreground = new SolidColorBrush(Color.FromArgb(220, 192, 235, 215)),
             FontSize = 12,
             VerticalAlignment = VerticalAlignment.Center,
             MinWidth = 42,
