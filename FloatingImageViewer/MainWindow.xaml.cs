@@ -160,6 +160,34 @@ public partial class MainWindow : Window
     private readonly Button _globalOpacityExpand = new() { Content = "展开全部图层", Margin = new Thickness(0, 6, 0, 0) };
     private readonly StackPanel _globalOpacityRows = new();
 
+    // 固定图片面板（仿全局透明度面板）：全局锁定开关 + 展开后每个图层单独固定
+    private bool _globalFixedActive;
+    private bool _globalFixedExpanded;
+    private readonly Border _globalFixedPanel = new()
+    {
+        Background = new SolidColorBrush(Color.FromArgb(235, 30, 30, 30)),
+        CornerRadius = new CornerRadius(10),
+        Padding = new Thickness(14, 12, 14, 12),
+        Width = 380,
+        HorizontalAlignment = HorizontalAlignment.Center,
+        VerticalAlignment = VerticalAlignment.Center,
+        Visibility = Visibility.Collapsed,
+    };
+    private readonly TextBlock _globalFixedTitle = new()
+    {
+        Foreground = new SolidColorBrush(Color.FromArgb(240, 224, 224, 224)),
+        FontSize = 13,
+        FontWeight = FontWeights.SemiBold,
+        Margin = new Thickness(0, 0, 0, 8),
+    };
+    private readonly CheckBox _globalFixedAll = new()
+    {
+        Content = "锁定所有图层",
+        Margin = new Thickness(0, 0, 0, 6),
+    };
+    private readonly Button _globalFixedExpand = new() { Content = "展开全部图层", Margin = new Thickness(0, 6, 0, 0) };
+    private readonly StackPanel _globalFixedRows = new();
+
     // 图片对比模式
     private bool _compareActive;
     private bool _compareSplitMode;
@@ -336,6 +364,43 @@ public partial class MainWindow : Window
         globalLayout.Children.Add(globalDone);
         _globalOpacityPanel.Child = globalLayout;
         RootGrid.Children.Add(_globalOpacityPanel);
+
+        // 固定图片面板：全局锁定开关 + 展开后每个图层单独固定。
+        _globalFixedTitle.Text = "固定图片（全局）";
+        var fixedLayout = new StackPanel();
+        fixedLayout.Children.Add(_globalFixedTitle);
+        _globalFixedAll.Checked += (_, _) => ApplyGlobalFixed(true);
+        _globalFixedAll.Unchecked += (_, _) => ApplyGlobalFixed(false);
+        fixedLayout.Children.Add(_globalFixedAll);
+        _globalFixedExpand.Click += (_, _) =>
+        {
+            if (_globalFixedExpanded)
+            {
+                CollapseGlobalFixedList();
+            }
+            else
+            {
+                ExpandGlobalFixedList();
+            }
+        };
+        fixedLayout.Children.Add(_globalFixedExpand);
+        fixedLayout.Children.Add(new ScrollViewer
+        {
+            MaxHeight = 420,
+            VerticalScrollBarVisibility = ScrollBarVisibility.Hidden,
+            Content = _globalFixedRows,
+        });
+        var fixedDone = new Button
+        {
+            Content = "完成",
+            Width = 72,
+            HorizontalAlignment = HorizontalAlignment.Right,
+            Margin = new Thickness(0, 10, 0, 0),
+        };
+        fixedDone.Click += (_, _) => CloseGlobalFixedPanel();
+        fixedLayout.Children.Add(fixedDone);
+        _globalFixedPanel.Child = fixedLayout;
+        RootGrid.Children.Add(_globalFixedPanel);
 
         _inputSlider.ValueChanged += (_, _) =>
         {
@@ -1488,18 +1553,8 @@ public partial class MainWindow : Window
                 UpdateHoverOpacitySlider();
             }
         }));
-        // 固定图片：独立 = 锁定鼠标所在图层（悬停即选中）；全局 = 一次锁定/解锁所有图层。
-        bool allFixed = _layers.Count > 0 && _layers.All(l => l.Fixed);
-        menu.Items.Add(CreateCheckItem("固定图片（全局）", allFixed, () =>
-        {
-            bool newState = !allFixed;
-            foreach (var layer in _layers)
-            {
-                layer.Fixed = newState;
-            }
-
-            ScheduleSave();
-        }));
+        // 固定图片：全局 = 面板（全局锁定开关 + 展开后单独调整）；独立 = 锁定鼠标所在图层（勾选）。
+        menu.Items.Add(CreateItem("固定图片（全局）", OpenGlobalFixedPanel));
         menu.Items.Add(CreateCheckItem("固定图片（独立）", _activeLayer is { Fixed: true }, () =>
         {
             if (_activeLayer is { } layer)
@@ -2737,12 +2792,12 @@ public partial class MainWindow : Window
         return new Rect(topLeft, new Size(_inputPanel.ActualWidth, _inputPanel.ActualHeight)).Contains(windowPoint);
     }
 
-    /// <summary>是否有任何窗口内面板打开（内联输入面板 / 全局透明度面板）。</summary>
-    private bool AnyPanelActive => _inputActive || _globalOpacityActive;
+    /// <summary>是否有任何窗口内面板打开（内联输入面板 / 全局透明度面板 / 固定图片面板）。</summary>
+    private bool AnyPanelActive => _inputActive || _globalOpacityActive || _globalFixedActive;
 
     /// <summary>判断点是否落在任一打开的面板内。</summary>
     private bool IsPointInAnyPanel(Point windowPoint)
-        => IsPointInInputPanel(windowPoint) || IsPointInGlobalOpacityPanel(windowPoint);
+        => IsPointInInputPanel(windowPoint) || IsPointInGlobalOpacityPanel(windowPoint) || IsPointInGlobalFixedPanel(windowPoint);
 
     /// <summary>判断窗口坐标点是否在全局透明度面板内。</summary>
     private bool IsPointInGlobalOpacityPanel(Point windowPoint)
@@ -2930,6 +2985,118 @@ public partial class MainWindow : Window
         _globalOpacityActive = false;
         _globalOpacityPanel.Visibility = Visibility.Collapsed;
         UpdateHoverOpacitySlider();
+    }
+
+    /// <summary>判断窗口坐标点是否在固定图片面板内。</summary>
+    private bool IsPointInGlobalFixedPanel(Point windowPoint)
+    {
+        var topLeft = _globalFixedPanel.TranslatePoint(new Point(0, 0), this);
+        return new Rect(topLeft, new Size(_globalFixedPanel.ActualWidth, _globalFixedPanel.ActualHeight)).Contains(windowPoint);
+    }
+
+    /// <summary>打开固定图片面板：全局锁定开关 + 展开后每个图层单独固定。</summary>
+    private void OpenGlobalFixedPanel()
+    {
+        if (_layers.Count == 0)
+        {
+            return;
+        }
+
+        _globalFixedAll.IsChecked = _layers.All(l => l.Fixed);
+        CollapseGlobalFixedList();
+        _globalFixedActive = true;
+        _globalFixedPanel.Visibility = Visibility.Visible;
+    }
+
+    /// <summary>全局锁定开关：一键固定/解锁所有图层（同时同步每行的勾选状态）。</summary>
+    private void ApplyGlobalFixed(bool fixedState)
+    {
+        foreach (var layer in _layers)
+        {
+            layer.Fixed = fixedState;
+        }
+
+        foreach (var child in _globalFixedRows.Children)
+        {
+            if (child is Grid row &&
+                row.Children.OfType<CheckBox>().FirstOrDefault() is { } check)
+            {
+                check.IsChecked = fixedState; // 触发行事件设置同值，幂等
+            }
+        }
+
+        ScheduleSave();
+    }
+
+    /// <summary>展开全部图层的固定开关列表（面板内可滚动）。</summary>
+    private void ExpandGlobalFixedList()
+    {
+        if (_globalFixedRows.Children.Count == 0)
+        {
+            foreach (var layer in _layers)
+            {
+                _globalFixedRows.Children.Add(BuildGlobalFixedRow(layer));
+            }
+        }
+
+        _globalFixedRows.Visibility = Visibility.Visible;
+        _globalFixedExpand.Content = "收起图层列表";
+        _globalFixedExpanded = true;
+    }
+
+    private void CollapseGlobalFixedList()
+    {
+        _globalFixedRows.Visibility = Visibility.Collapsed;
+        _globalFixedExpand.Content = "展开全部图层";
+        _globalFixedExpanded = false;
+    }
+
+    /// <summary>构建一行：图层文件名 + 固定勾选框（勾选 = 锁定该图层位置）。</summary>
+    private Grid BuildGlobalFixedRow(ImageLayer layer)
+    {
+        var row = new Grid { Margin = new Thickness(0, 3, 0, 3) };
+        row.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+        row.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+
+        var name = new TextBlock
+        {
+            Text = Path.GetFileName(layer.Path),
+            Foreground = new SolidColorBrush(Color.FromArgb(230, 224, 224, 224)),
+            FontSize = 12,
+            VerticalAlignment = VerticalAlignment.Center,
+            TextTrimming = TextTrimming.CharacterEllipsis,
+            Margin = new Thickness(0, 0, 10, 0),
+        };
+        Grid.SetColumn(name, 0);
+
+        var check = new CheckBox
+        {
+            Content = "固定",
+            IsChecked = layer.Fixed,
+            VerticalAlignment = VerticalAlignment.Center,
+        };
+        Grid.SetColumn(check, 1);
+        check.Checked += (_, _) =>
+        {
+            layer.Fixed = true;
+            ScheduleSave();
+        };
+        check.Unchecked += (_, _) =>
+        {
+            layer.Fixed = false;
+            ScheduleSave();
+        };
+
+        row.Children.Add(name);
+        row.Children.Add(check);
+        return row;
+    }
+
+    /// <summary>关闭固定图片面板。</summary>
+    private void CloseGlobalFixedPanel()
+    {
+        _globalFixedActive = false;
+        _globalFixedPanel.Visibility = Visibility.Collapsed;
     }
 
     private double ParseInputText()
