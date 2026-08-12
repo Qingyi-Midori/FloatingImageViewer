@@ -101,19 +101,27 @@ public partial class MainWindow : Window
     private readonly Button _inputOk = new() { Content = "确定", Width = 72, Margin = new Thickness(0, 10, 8, 0) };
     private readonly Button _inputCancel = new() { Content = "取消", Width = 72, Margin = new Thickness(0, 10, 0, 0) };
 
-    // 图层透明度：独立条（悬停图片下方）+ 全局面板（列出所有图层各自滑块）
+    // 图层透明度：独立条（图片内部偏下，常驻不随缩放）+ 全局面板（一个滚动条 + 展开按钮）
     private bool _hoverOpacityBarEnabled;
     private ImageLayer? _hoverSliderLayer;
     private bool _globalOpacityActive;
-    private readonly Slider _hoverOpacitySlider = new()
+    private bool _globalOpacityExpanded;
+    private ImageLayer? _globalOpacityTarget;
+    /// <summary>独立条容器总宽度：滑条 140 + 左右 padding 8×2。</summary>
+    private const double HoverBarWidth = 156;
+    /// <summary>独立条容器总高度：滑条 20 + 上下 padding 4×2。</summary>
+    private const double HoverBarHeight = 28;
+    /// <summary>独立条：半透明灰黑圆角背景（菜单风格），尺寸固定，不随图片缩放。</summary>
+    private readonly Border _hoverOpacityBar = new()
     {
-        Width = 140,
-        Minimum = 0,
-        Maximum = 100,
+        Background = new SolidColorBrush(Color.FromArgb(215, 30, 30, 30)),
+        CornerRadius = new CornerRadius(8),
+        Padding = new Thickness(8, 4, 8, 4),
         HorizontalAlignment = HorizontalAlignment.Left,
         VerticalAlignment = VerticalAlignment.Top,
         Visibility = Visibility.Collapsed,
     };
+    private readonly Slider _hoverOpacitySlider = new() { Width = 140, Minimum = 0, Maximum = 100 };
     private readonly Border _globalOpacityPanel = new()
     {
         Background = new SolidColorBrush(Color.FromArgb(235, 30, 30, 30)),
@@ -131,10 +139,26 @@ public partial class MainWindow : Window
         FontWeight = FontWeights.SemiBold,
         Margin = new Thickness(0, 0, 0, 8),
     };
+    private readonly TextBlock _globalOpacityTargetName = new()
+    {
+        Foreground = new SolidColorBrush(Color.FromArgb(230, 224, 224, 224)),
+        FontSize = 12,
+        VerticalAlignment = VerticalAlignment.Center,
+        TextTrimming = TextTrimming.CharacterEllipsis,
+        Margin = new Thickness(0, 0, 10, 0),
+    };
+    private readonly Slider _globalOpacitySlider = new() { Minimum = 0, Maximum = 100 };
+    private readonly TextBlock _globalOpacityPercent = new()
+    {
+        Foreground = new SolidColorBrush(Color.FromArgb(220, 79, 195, 247)),
+        FontSize = 12,
+        VerticalAlignment = VerticalAlignment.Center,
+        MinWidth = 42,
+        TextAlignment = TextAlignment.Right,
+        Margin = new Thickness(10, 0, 0, 0),
+    };
+    private readonly Button _globalOpacityExpand = new() { Content = "展开全部图层", Margin = new Thickness(0, 6, 0, 0) };
     private readonly StackPanel _globalOpacityRows = new();
-
-    /// <summary>透明度条统一样式：无外框的横向滚动条，已滑过部分用高亮色填充。</summary>
-    private static readonly Style OpacitySliderStyle = CreateOpacitySliderStyle();
 
     // 图片对比模式
     private bool _compareActive;
@@ -248,9 +272,9 @@ public partial class MainWindow : Window
         // 面板直接挂到 RootGrid（Grid 对齐居中），置于最上层。
         RootGrid.Children.Add(_inputPanel);
 
-        // 独立透明度条（悬停图片下方，绝对定位）与全局透明度面板（居中）。
+        // 独立透明度条（图片内部偏下，绝对定位）与全局透明度面板（居中）。
         _hoverOpacityBarEnabled = _settings.HoverOpacityBar;
-        _hoverOpacitySlider.Style = OpacitySliderStyle;
+        _hoverOpacityBar.Child = _hoverOpacitySlider;
         _hoverOpacitySlider.ValueChanged += (_, _) =>
         {
             if (_hoverSliderLayer is { } layer && _layers.Contains(layer))
@@ -258,11 +282,43 @@ public partial class MainWindow : Window
                 ApplyLayerOpacity(layer, _hoverOpacitySlider.Value);
             }
         };
-        RootGrid.Children.Add(_hoverOpacitySlider);
+        RootGrid.Children.Add(_hoverOpacityBar);
 
-        _globalOpacityTitle.Text = "全局透明度";
+        _globalOpacityTitle.Text = "不透明度（全局）";
         var globalLayout = new StackPanel();
         globalLayout.Children.Add(_globalOpacityTitle);
+        // 默认只显示一个滚动条（控制当前图层），点“展开全部图层”才列出所有图层。
+        var targetRow = new Grid();
+        targetRow.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+        targetRow.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(150) });
+        targetRow.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+        Grid.SetColumn(_globalOpacityTargetName, 0);
+        Grid.SetColumn(_globalOpacitySlider, 1);
+        Grid.SetColumn(_globalOpacityPercent, 2);
+        targetRow.Children.Add(_globalOpacityTargetName);
+        targetRow.Children.Add(_globalOpacitySlider);
+        targetRow.Children.Add(_globalOpacityPercent);
+        _globalOpacitySlider.ValueChanged += (_, _) =>
+        {
+            if (_globalOpacityTarget is { } target)
+            {
+                ApplyLayerOpacity(target, _globalOpacitySlider.Value);
+                _globalOpacityPercent.Text = $"{_globalOpacitySlider.Value:0}%";
+            }
+        };
+        globalLayout.Children.Add(targetRow);
+        _globalOpacityExpand.Click += (_, _) =>
+        {
+            if (_globalOpacityExpanded)
+            {
+                CollapseGlobalOpacityList();
+            }
+            else
+            {
+                ExpandGlobalOpacityList();
+            }
+        };
+        globalLayout.Children.Add(_globalOpacityExpand);
         globalLayout.Children.Add(new ScrollViewer
         {
             MaxHeight = 420,
@@ -599,7 +655,7 @@ public partial class MainWindow : Window
         return source;
     }
 
-    /// <summary>切换活动图层（各 GIF 播放器独立运行，无需重绑）。</summary>
+    /// <summary>切换活动图层（各 GIF 播放器独立运行，无需重绑）；独立透明度条跟随活动图层。</summary>
     private void SetActiveLayer(ImageLayer layer)
     {
         if (_activeLayer == layer)
@@ -610,6 +666,7 @@ public partial class MainWindow : Window
         _activeLayer = layer;
         ApplyAntiAliasing();
         UpdateTransform();
+        UpdateHoverOpacitySlider();
     }
 
     private static string BuildCacheKey(string path)
@@ -824,7 +881,7 @@ public partial class MainWindow : Window
         }
 
         // 独立透明度条可见时跟随图片位置（拖拽/缩放/回中心动画中保持贴图）。
-        if (_hoverOpacitySlider.Visibility == Visibility.Visible && _hoverSliderLayer is { } hoverLayer)
+        if (_hoverOpacityBar.Visibility == Visibility.Visible && _hoverSliderLayer is { } hoverLayer)
         {
             PositionHoverOpacitySlider(hoverLayer);
         }
@@ -1032,7 +1089,7 @@ public partial class MainWindow : Window
         }
     }
 
-    /// <summary>鼠标移出窗口时隐藏图片信息面板与独立透明度条（面板打开时不干预）。</summary>
+    /// <summary>鼠标移出窗口时隐藏图片信息面板（面板打开时不干预；独立透明度条常驻图片内不隐藏）。</summary>
     private void Window_MouseLeave(object sender, MouseEventArgs e)
     {
         if (AnyPanelActive)
@@ -1041,7 +1098,6 @@ public partial class MainWindow : Window
         }
 
         HideInfoPanel();
-        HideHoverOpacitySlider();
     }
 
     private void Window_PreviewMouseMove(object sender, MouseEventArgs e)
@@ -1095,27 +1151,17 @@ public partial class MainWindow : Window
             return;
         }
 
-        // 悬停/拖动独立透明度条时鼠标位于图片外的条上，不切换悬停目标
-        //（条不命中任何图层，直接走悬停判定会把它自己隐藏，造成拖动中断）。
-        if (_hoverOpacitySlider.Visibility == Visibility.Visible &&
-            (_hoverOpacitySlider.IsMouseOver || _hoverOpacitySlider.IsMouseCaptureWithin))
-        {
-            return;
-        }
-
         // 悬停即选中：鼠标移到哪个图层上，滚轮缩放/双击就直接作用于该图层，
-        // 无需先点击选中；移到空白处保持当前选中图层不变。
+        // 无需先点击选中；移到空白处保持当前选中图层不变（独立透明度条常驻活动图层）。
         var hover = HitTestLayer(position);
         if (hover is not null)
         {
             SetActiveLayer(hover);
             UpdateInfoPanel(hover);
-            UpdateHoverOpacitySlider(hover);
         }
         else
         {
             HideInfoPanel();
-            HideHoverOpacitySlider();
         }
     }
 
@@ -1134,6 +1180,13 @@ public partial class MainWindow : Window
     {
         if (AnyPanelActive)
         {
+            return;
+        }
+
+        // 按下在独立透明度条上时不开始图片拖拽（条在图片内，拖条 = 调透明度）。
+        if (IsPointOnHoverSlider(e.GetPosition(this)))
+        {
+            e.Handled = true;
             return;
         }
 
@@ -1411,7 +1464,22 @@ public partial class MainWindow : Window
             }));
 
         menu.Items.Add(CreateGimmickSubmenu());
-        menu.Items.Add(CreateOpacitySubmenu());
+        // 透明度首级拆分：全局 = 面板（一个滚动条 + 展开按钮）；独立 = 图片内常驻条（勾选开关）。
+        menu.Items.Add(CreateItem("不透明度（全局）", OpenGlobalOpacityPanel));
+        menu.Items.Add(CreateCheckItem("不透明度（独立）", _hoverOpacityBarEnabled, () =>
+        {
+            _hoverOpacityBarEnabled = !_hoverOpacityBarEnabled;
+            _settings.HoverOpacityBar = _hoverOpacityBarEnabled;
+            SaveSettings();
+            if (!_hoverOpacityBarEnabled)
+            {
+                HideHoverOpacitySlider();
+            }
+            else
+            {
+                UpdateHoverOpacitySlider();
+            }
+        }));
         menu.Items.Add(CreateCacheSubmenu());
         menu.Items.Add(CreateSlideshowItem());
         menu.Items.Add(CreateGifPauseItem());
@@ -1609,27 +1677,6 @@ public partial class MainWindow : Window
         {
             item.IsChecked = ReferenceEquals(item, selected);
         }
-    }
-
-    /// <summary>
-    /// 不透明度子菜单（2.1.0 拆分）：全局透明度 = 面板列出所有图层的透明度条（无需悬停即可单独调整）；
-    /// 独立透明度条 = 悬停图片时在图片下方显示滑块，只调整鼠标所在的那一个图层。
-    /// </summary>
-    private MenuItem CreateOpacitySubmenu()
-    {
-        var submenu = new MenuItem { Header = "不透明度" };
-        submenu.Items.Add(CreateItem("全局透明度...", OpenGlobalOpacityPanel));
-        submenu.Items.Add(CreateCheckItem("独立透明度条", _hoverOpacityBarEnabled, () =>
-        {
-            _hoverOpacityBarEnabled = !_hoverOpacityBarEnabled;
-            _settings.HoverOpacityBar = _hoverOpacityBarEnabled;
-            SaveSettings();
-            if (!_hoverOpacityBarEnabled)
-            {
-                HideHoverOpacitySlider();
-            }
-        }));
-        return submenu;
     }
 
     private MenuItem CreateIntervalSubmenu()
@@ -2027,6 +2074,7 @@ public partial class MainWindow : Window
         // 清空上一轮的效果层（旧底图已随图层清空移除，这里仅清列表）。
         _mosaicEffects.Clear();
         _mosaicActive = true;
+        HideHoverOpacitySlider(); // 绘制模式下隐藏独立透明度条
         _mosaicSelecting = false;
         _mosaicPreview = null;
         _mosaicBox = new Border
@@ -2045,6 +2093,7 @@ public partial class MainWindow : Window
         _mosaicSelecting = false;
         _mosaicPreview = null;
         _mosaicBox = null;
+        UpdateHoverOpacitySlider(); // 恢复独立透明度条（跟随底图图层）
     }
 
     /// <summary>开始一次框选：创建效果层与框选虚线框（挂载到底图图层，随图片变换）。</summary>
@@ -2178,7 +2227,7 @@ public partial class MainWindow : Window
     {
         if (_hoverSliderLayer == layer)
         {
-            HideHoverOpacitySlider();
+            _hoverSliderLayer = null;
         }
 
         int index = _layers.IndexOf(layer);
@@ -2198,6 +2247,7 @@ public partial class MainWindow : Window
         }
 
         ScheduleSave();
+        UpdateHoverOpacitySlider(); // 删除后独立条跟随新的活动图层（无图层则隐藏）
     }
 
     /// <summary>删除活动图层（右键菜单“关闭图片”）。</summary>
@@ -2355,6 +2405,7 @@ public partial class MainWindow : Window
             _compareActive = true;
             _comparePanning = false;
             _compareDraggingSplit = false;
+            HideHoverOpacitySlider(); // 对比模式无图层，隐藏独立透明度条
             UpdateCompareTransform();
             gifA?.Start();
             gifB?.Start();
@@ -2675,28 +2726,17 @@ public partial class MainWindow : Window
     /// <summary>判断窗口坐标点是否在独立透明度条上（条未显示时返回 false）。</summary>
     private bool IsPointOnHoverSlider(Point windowPoint)
     {
-        if (_hoverOpacitySlider.Visibility != Visibility.Visible)
+        if (_hoverOpacityBar.Visibility != Visibility.Visible)
         {
             return false;
         }
 
-        // 条以 Margin 绝对定位在 RootGrid 中，矩形即窗口坐标。
+        // 条以 Margin 绝对定位在 RootGrid 中，矩形即窗口坐标（容器尺寸固定）。
         return new Rect(
-            _hoverOpacitySlider.Margin.Left,
-            _hoverOpacitySlider.Margin.Top,
-            _hoverOpacitySlider.Width,
-            _hoverOpacitySlider.Height).Contains(windowPoint);
-    }
-
-    /// <summary>透明度条统一样式：无外框的横向滚动条，已滑过部分用高亮色填充。</summary>
-    private static Style CreateOpacitySliderStyle()
-    {
-        var style = new Style(typeof(Slider));
-        style.Setters.Add(new Setter(Control.BackgroundProperty, Brushes.Transparent));
-        style.Setters.Add(new Setter(Control.BorderThicknessProperty, new Thickness(0)));
-        style.Setters.Add(new Setter(Control.HeightProperty, 18.0));
-        style.Setters.Add(new Setter(Control.ForegroundProperty, new SolidColorBrush(Color.FromRgb(79, 195, 247))));
-        return style;
+            _hoverOpacityBar.Margin.Left,
+            _hoverOpacityBar.Margin.Top,
+            HoverBarWidth,
+            HoverBarHeight).Contains(windowPoint);
     }
 
     /// <summary>设置图层透明度（0–100）并应用，变化后调度保存。</summary>
@@ -2707,10 +2747,14 @@ public partial class MainWindow : Window
         ScheduleSave();
     }
 
-    /// <summary>更新并显示独立透明度条：位于悬停图层图片正下方（越出窗口底部时移到上方）。</summary>
-    private void UpdateHoverOpacitySlider(ImageLayer layer)
+    /// <summary>
+    /// 更新独立透明度条：常驻显示在活动图层图片内部偏下位置（不随鼠标移出消失），
+    /// 只调整该图层。条自身尺寸固定，不受图片缩放影响。
+    /// </summary>
+    private void UpdateHoverOpacitySlider()
     {
-        if (!_hoverOpacityBarEnabled || AnyPanelActive || _compareActive || _mosaicActive)
+        if (!_hoverOpacityBarEnabled || AnyPanelActive || _compareActive || _mosaicActive
+            || _activeLayer is not { } layer)
         {
             HideHoverOpacitySlider();
             return;
@@ -2719,49 +2763,75 @@ public partial class MainWindow : Window
         _hoverSliderLayer = layer;
         _hoverOpacitySlider.Value = layer.OpacityPercent; // ValueChanged 应用同值，幂等
         PositionHoverOpacitySlider(layer);
-        _hoverOpacitySlider.Visibility = Visibility.Visible;
+        _hoverOpacityBar.Visibility = Visibility.Visible;
     }
 
-    /// <summary>把独立透明度条定位到图层图片下方居中（超出窗口底部时移到图片上方）。</summary>
+    /// <summary>把独立透明度条定位到图层图片内部偏下（距图片底部 16px，居中）；图片过矮时贴图片顶部。</summary>
     private void PositionHoverOpacitySlider(ImageLayer layer)
     {
         var rect = GetLayerRect(layer); // 屏幕坐标
-        double sliderWidth = _hoverOpacitySlider.Width;
-        double sliderHeight = _hoverOpacitySlider.Height;
-        double x = rect.Left - Left + rect.Width / 2 - sliderWidth / 2;
-        double y = rect.Bottom - Top + 8;
-        if (y + sliderHeight > Height)
+        double x = rect.Left - Left + rect.Width / 2 - HoverBarWidth / 2;
+        double yBottom = rect.Bottom - Top - HoverBarHeight - 16; // 偏下：距图片底部 16px
+        double yTop = rect.Top - Top + 4; // 图片过矮时的兜底位置
+        double y = Math.Max(yBottom, yTop);
+        if (y < 0)
         {
-            y = rect.Top - Top - sliderHeight - 8;
+            y = 0;
         }
 
-        x = Math.Clamp(x, 4, Width - sliderWidth - 4);
-        _hoverOpacitySlider.Margin = new Thickness(x, Math.Max(0, y), 0, 0);
+        if (y + HoverBarHeight > Height)
+        {
+            y = Height - HoverBarHeight - 4;
+        }
+
+        x = Math.Clamp(x, 4, Width - HoverBarWidth - 4);
+        _hoverOpacityBar.Margin = new Thickness(x, y, 0, 0);
     }
 
     private void HideHoverOpacitySlider()
     {
         _hoverSliderLayer = null;
-        _hoverOpacitySlider.Visibility = Visibility.Collapsed;
+        _hoverOpacityBar.Visibility = Visibility.Collapsed;
     }
 
-    /// <summary>打开全局透明度面板：列出所有图层各自的透明度条（无需悬停即可单独调整）。</summary>
+    /// <summary>打开全局透明度面板：默认只显示一个滚动条（控制当前图层），展开按钮再列出全部。</summary>
     private void OpenGlobalOpacityPanel()
     {
-        if (_layers.Count == 0)
+        if (_activeLayer is not { } layer)
         {
             return;
         }
 
         HideHoverOpacitySlider();
-        _globalOpacityRows.Children.Clear();
-        foreach (var layer in _layers)
-        {
-            _globalOpacityRows.Children.Add(BuildGlobalOpacityRow(layer));
-        }
-
+        _globalOpacityTarget = layer;
+        _globalOpacityTargetName.Text = Path.GetFileName(layer.Path);
+        _globalOpacitySlider.Value = layer.OpacityPercent; // ValueChanged 更新百分比并应用同值
+        CollapseGlobalOpacityList();
         _globalOpacityActive = true;
         _globalOpacityPanel.Visibility = Visibility.Visible;
+    }
+
+    /// <summary>展开全部图层的透明度条（面板内可滚动查看，999 张也不会撑爆面板）。</summary>
+    private void ExpandGlobalOpacityList()
+    {
+        if (_globalOpacityRows.Children.Count == 0)
+        {
+            foreach (var layer in _layers)
+            {
+                _globalOpacityRows.Children.Add(BuildGlobalOpacityRow(layer));
+            }
+        }
+
+        _globalOpacityRows.Visibility = Visibility.Visible;
+        _globalOpacityExpand.Content = "收起图层列表";
+        _globalOpacityExpanded = true;
+    }
+
+    private void CollapseGlobalOpacityList()
+    {
+        _globalOpacityRows.Visibility = Visibility.Collapsed;
+        _globalOpacityExpand.Content = "展开全部图层";
+        _globalOpacityExpanded = false;
     }
 
     /// <summary>构建一行：图层文件名 + 透明度条 + 当前百分比（拖动实时生效）。</summary>
@@ -2788,7 +2858,6 @@ public partial class MainWindow : Window
             Minimum = 0,
             Maximum = 100,
             Value = layer.OpacityPercent,
-            Style = OpacitySliderStyle,
         };
         Grid.SetColumn(slider, 1);
 
@@ -2816,11 +2885,12 @@ public partial class MainWindow : Window
         return row;
     }
 
-    /// <summary>关闭全局透明度面板（拖动实时生效，无需确认）。</summary>
+    /// <summary>关闭全局透明度面板（拖动实时生效，无需确认）；恢复独立透明度条显示。</summary>
     private void CloseGlobalOpacityPanel()
     {
         _globalOpacityActive = false;
         _globalOpacityPanel.Visibility = Visibility.Collapsed;
+        UpdateHoverOpacitySlider();
     }
 
     private double ParseInputText()
