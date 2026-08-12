@@ -459,9 +459,8 @@ public partial class MainWindow : Window
 
     /// <summary>
     /// 窗口首次渲染前（Loaded 在布局完成后、首帧绘制前触发）执行启动收尾：
-    /// 1) 恢复上次会话的图层——此时 DPI/工作区已准确、软件渲染管线已就绪，
-    ///    GIF 逐帧定时器在显示后启动、图层位置直接按正确尺寸计算，避免启动卡帧与位置偏移；
-    /// 2) 对齐全屏尺寸（窗口未显示时 DPI 可能不准，显示后重新对齐）。
+    /// 1) 对齐全屏尺寸（窗口未显示时 DPI 可能不准，显示后重新对齐）；
+    /// 2) 异步恢复上次会话的图层（静态图后台解码不阻塞 UI，完成后自动执行启动刷新）。
     /// </summary>
     private void Window_Loaded(object sender, RoutedEventArgs e)
     {
@@ -474,42 +473,12 @@ public partial class MainWindow : Window
 
         if (_layers.Count == 0 && _settings.Layers.Count > 0)
         {
-            RestoreLayers();
+            RestoreLayersAsync(); // 恢复完成后内部调用 RefreshAfterStartup
         }
-
-        UpdateTransform();
-        // GIF 兜底启动（窗口已显示时 CreateLayer 已直接启动，这里保证会话恢复的也启动）。
-        foreach (var layer in _layers)
+        else
         {
-            if (layer.Gif is { IsAnimatedGif: true } gif && !gif.IsPaused)
-            {
-                gif.Start();
-            }
+            RefreshAfterStartup();
         }
-
-        // 启动强制刷新：同步的隐藏→显示会被 WPF 在同一布局周期内合并（渲染失效被抵消、
-        // 画面无变化），必须跨布局周期两段式提交——先隐藏并强制布局（一帧消失），
-        // 下一空闲周期再恢复显示，与"手动隐藏图层再显示"完全一致。
-        ForceRefreshLayers(); // 首帧前先摆正视觉树（内容一致，无闪烁）
-        Dispatcher.BeginInvoke(DispatcherPriority.ApplicationIdle, () =>
-        {
-            foreach (var layer in _layers)
-            {
-                layer.Element.Visibility = Visibility.Collapsed;
-            }
-
-            UpdateLayout(); // 提交隐藏状态，确保渲染失效真正入队
-
-            Dispatcher.BeginInvoke(DispatcherPriority.ApplicationIdle, () =>
-            {
-                foreach (var layer in _layers)
-                {
-                    layer.Element.Visibility = layer.Visible ? Visibility.Visible : Visibility.Collapsed;
-                }
-
-                UpdateTransform();
-            });
-        });
     }
 
     /// <summary>
@@ -587,34 +556,117 @@ public partial class MainWindow : Window
     }
 
     /// <summary>
-    /// 会话恢复：把上次退出前保存的图层全部恢复（路径、缩放、位置、显隐），
-    /// 解码走 ImageCache 缓存命中快速加载。
+    /// 异步恢复会话图层：静态图在后台线程解码（不阻塞 UI 线程、不冻结 GIF 定时器，
+    /// 多图启动不再卡死），完成后在 UI 线程创建图层；GIF 因播放器线程亲和仍在 UI 线程解码。
+    /// 恢复完成后自动执行启动刷新。
     /// </summary>
-    private void RestoreLayers()
+    private void RestoreLayersAsync()
     {
-        foreach (var saved in _settings.Layers)
+        var saved = _settings.Layers.ToList();
+        var ui = TaskScheduler.FromCurrentSynchronizationContext();
+        Task.Run(() =>
         {
-            try
+            var decoded = new List<(SavedLayer Info, BitmapSource? Source)>(saved.Count);
+            foreach (var s in saved)
             {
-                var layer = AddLayer(saved.Path);
-                layer.ZoomScale = saved.ZoomScale;
-                layer.UserPan = new Point(saved.PanX, saved.PanY);
-                layer.Visible = saved.Visible;
-                layer.Element.Visibility = saved.Visible ? Visibility.Visible : Visibility.Collapsed;
-                layer.OpacityPercent = Math.Clamp(saved.OpacityPercent, 0, 100);
-                layer.Canvas.Opacity = layer.OpacityPercent / 100.0;
-                layer.Fixed = saved.Fixed;
+                try
+                {
+                    decoded.Add(IsGifPath(s.Path)
+                        ? (s, null) // GIF 在 UI 线程处理（播放器线程亲和）
+                        : (s, LoadStaticImage(s.Path)));
+                }
+                catch
+                {
+                    decoded.Add((s, null));
+                }
             }
-            catch
-            {
-                // 单个图层恢复失败（文件被移动/删除）不影响其余图层。
-            }
-        }
 
-        if (_layers.Count > 0)
+            return decoded;
+        }).ContinueWith(t =>
         {
-            UpdateTransform();
-        }
+            if (t.IsFaulted || t.IsCanceled)
+            {
+                RefreshAfterStartup();
+                return;
+            }
+
+            foreach (var (info, source) in t.Result)
+            {
+                try
+                {
+                    ImageLayer layer;
+                    if (IsGifPath(info.Path))
+                    {
+                        layer = CreateLayer(info.Path); // UI 线程解码 + 启动播放
+                    }
+                    else if (source is not null)
+                    {
+                        layer = AddLayer(info.Path, source);
+                    }
+                    else
+                    {
+                        continue; // 静态图解码失败，跳过
+                    }
+
+                    ApplySavedLayerState(layer, info);
+                }
+                catch
+                {
+                    // 单个图层恢复失败（文件被移动/删除）不影响其余图层。
+                }
+            }
+
+            if (_layers.Count > 0)
+            {
+                SetActiveLayer(_layers[^1]); // 与同步恢复一致：活动图层 = 最后恢复的栈顶图层
+                UpdateTransform();
+            }
+
+            RefreshAfterStartup();
+        }, ui);
+    }
+
+    private static bool IsGifPath(string path)
+        => string.Equals(Path.GetExtension(path), ".gif", StringComparison.OrdinalIgnoreCase);
+
+    /// <summary>把保存的会话状态应用到图层（缩放/位置/显隐/透明度/固定）。</summary>
+    private static void ApplySavedLayerState(ImageLayer layer, SavedLayer saved)
+    {
+        layer.ZoomScale = saved.ZoomScale;
+        layer.UserPan = new Point(saved.PanX, saved.PanY);
+        layer.Visible = saved.Visible;
+        layer.Element.Visibility = saved.Visible ? Visibility.Visible : Visibility.Collapsed;
+        layer.OpacityPercent = Math.Clamp(saved.OpacityPercent, 0, 100);
+        layer.Canvas.Opacity = layer.OpacityPercent / 100.0;
+        layer.Fixed = saved.Fixed;
+    }
+
+    /// <summary>
+    /// 启动刷新：同步摆正视觉树后，跨布局周期两段式隐藏/显示（一帧消失再恢复）——
+    /// 同步的隐藏→显示会被 WPF 在同一布局周期内合并（渲染失效被抵消），必须跨周期提交。
+    /// </summary>
+    private void RefreshAfterStartup()
+    {
+        ForceRefreshLayers(); // 先摆正视觉树（内容一致，无闪烁）
+        Dispatcher.BeginInvoke(DispatcherPriority.ApplicationIdle, () =>
+        {
+            foreach (var layer in _layers)
+            {
+                layer.Element.Visibility = Visibility.Collapsed;
+            }
+
+            UpdateLayout(); // 提交隐藏状态，确保渲染失效真正入队
+
+            Dispatcher.BeginInvoke(DispatcherPriority.ApplicationIdle, () =>
+            {
+                foreach (var layer in _layers)
+                {
+                    layer.Element.Visibility = layer.Visible ? Visibility.Visible : Visibility.Collapsed;
+                }
+
+                UpdateTransform();
+            });
+        });
     }
 
     private void ApplyBackdrop()
