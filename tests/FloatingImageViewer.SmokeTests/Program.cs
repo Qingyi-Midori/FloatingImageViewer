@@ -270,9 +270,9 @@ Assert(clamped.SlideTransition == "Fade" && clamped.SlideDirection == "Left", "�
 
             var buildMenu = typeof(MainWindow).GetMethod("BuildContextMenu", BindingFlags.NonPublic | BindingFlags.Instance)!;
             var menu = (ContextMenu)buildMenu.Invoke(window, null)!;
-            Assert(menu is not null && menu.Items.Count == 23, "菜单项数量");
+            Assert(menu is not null && menu.Items.Count == 25, "菜单项数量");
             var headers = menu!.Items.OfType<MenuItem>().Select(m => m.Header?.ToString()).ToList();
-            foreach (var expected in new[] { "窗口置顶", "剪贴板监听", "图片信息", "添加图片...", "图层", "框选马赛克", "图片对比", "缩放模式", "背景模式", "无用小功能", "不透明度（全局）", "不透明度（独立）", "固定图片（全局）", "固定图片（独立）", "图片缓存", "幻灯片放映", "暂停GIF动画", "更换图片", "关闭图片", "重置窗口", "退出程序" })
+            foreach (var expected in new[] { "窗口置顶", "剪贴板监听", "图片信息", "添加图片...", "图层", "框选马赛克", "图片对比", "缩放模式", "背景模式", "无用小功能", "不透明度（全局）", "不透明度（独立）", "固定图片（全局）", "固定图片（独立）", "图片缓存", "幻灯片放映", "暂停GIF动画", "更换图片", "关闭图片", "重置窗口", "退出程序", "关于..." })
             {
                 Assert(headers.Contains(expected), "菜单包含: " + expected);
             }
@@ -335,6 +335,15 @@ Assert(clamped.SlideTransition == "Fade" && clamped.SlideDirection == "Left", "�
             var closeFixed = typeof(MainWindow).GetMethod("CloseGlobalFixedPanel", BindingFlags.NonPublic | BindingFlags.Instance)!;
             closeFixed.Invoke(window, null);
             Assert(((Border)fixedPanelField.GetValue(window)!).Visibility == Visibility.Collapsed, "固定图片面板关闭");
+
+            // 关于面板：打开/关闭
+            var openAbout = typeof(MainWindow).GetMethod("OpenAbout", BindingFlags.NonPublic | BindingFlags.Instance)!;
+            openAbout.Invoke(window, null);
+            var aboutPanelField = typeof(MainWindow).GetField("_aboutPanel", BindingFlags.NonPublic | BindingFlags.Instance)!;
+            Assert(((Border)aboutPanelField.GetValue(window)!).Visibility == Visibility.Visible, "关于面板打开");
+            var closeAbout = typeof(MainWindow).GetMethod("CloseAbout", BindingFlags.NonPublic | BindingFlags.Instance)!;
+            closeAbout.Invoke(window, null);
+            Assert(((Border)aboutPanelField.GetValue(window)!).Visibility == Visibility.Collapsed, "关于面板关闭");
 
             // GIF 暂停项在静态图片下应禁用
             var gifItem = menu.Items.OfType<MenuItem>().First(m => m.Header?.ToString() == "暂停GIF动画");

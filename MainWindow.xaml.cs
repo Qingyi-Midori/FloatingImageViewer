@@ -188,6 +188,19 @@ public partial class MainWindow : Window
     private readonly Button _globalFixedExpand = new() { Content = "展开全部图层", Margin = new Thickness(0, 6, 0, 0) };
     private readonly StackPanel _globalFixedRows = new();
 
+    // 关于面板（窗口内新图层，右上/右下 X 关闭）
+    private bool _aboutActive;
+    private readonly Border _aboutPanel = new()
+    {
+        Background = new SolidColorBrush(Color.FromArgb(245, 30, 30, 30)),
+        CornerRadius = new CornerRadius(10),
+        Padding = new Thickness(18, 14, 18, 14),
+        Width = 420,
+        HorizontalAlignment = HorizontalAlignment.Center,
+        VerticalAlignment = VerticalAlignment.Center,
+        Visibility = Visibility.Collapsed,
+    };
+
     // 图片对比模式
     private bool _compareActive;
     private bool _compareSplitMode;
@@ -401,6 +414,10 @@ public partial class MainWindow : Window
         fixedLayout.Children.Add(fixedDone);
         _globalFixedPanel.Child = fixedLayout;
         RootGrid.Children.Add(_globalFixedPanel);
+
+        // 关于面板（窗口内新图层，右上/右下 X 关闭）。
+        BuildAboutPanel();
+        RootGrid.Children.Add(_aboutPanel);
 
         _inputSlider.ValueChanged += (_, _) =>
         {
@@ -1609,6 +1626,8 @@ public partial class MainWindow : Window
         menu.Items.Add(CreateItem("重置窗口", ResetWindow));
         menu.Items.Add(new Separator());
         menu.Items.Add(CreateItem("退出程序", () => Close()));
+        menu.Items.Add(new Separator());
+        menu.Items.Add(CreateItem("关于...", OpenAbout));
 
         return menu;
     }
@@ -2829,12 +2848,15 @@ public partial class MainWindow : Window
         return new Rect(topLeft, new Size(_inputPanel.ActualWidth, _inputPanel.ActualHeight)).Contains(windowPoint);
     }
 
-    /// <summary>是否有任何窗口内面板打开（内联输入面板 / 全局透明度面板 / 固定图片面板）。</summary>
-    private bool AnyPanelActive => _inputActive || _globalOpacityActive || _globalFixedActive;
+    /// <summary>是否有任何窗口内面板打开（内联输入面板 / 全局透明度面板 / 固定图片面板 / 关于面板）。</summary>
+    private bool AnyPanelActive => _inputActive || _globalOpacityActive || _globalFixedActive || _aboutActive;
 
     /// <summary>判断点是否落在任一打开的面板内。</summary>
     private bool IsPointInAnyPanel(Point windowPoint)
-        => IsPointInInputPanel(windowPoint) || IsPointInGlobalOpacityPanel(windowPoint) || IsPointInGlobalFixedPanel(windowPoint);
+        => IsPointInInputPanel(windowPoint)
+        || IsPointInGlobalOpacityPanel(windowPoint)
+        || IsPointInGlobalFixedPanel(windowPoint)
+        || IsPointInAboutPanel(windowPoint);
 
     /// <summary>判断窗口坐标点是否在全局透明度面板内。</summary>
     private bool IsPointInGlobalOpacityPanel(Point windowPoint)
@@ -3135,6 +3157,150 @@ public partial class MainWindow : Window
         _globalFixedActive = false;
         _globalFixedPanel.Visibility = Visibility.Collapsed;
     }
+
+    /// <summary>打开关于面板（窗口内新图层）。</summary>
+    private void OpenAbout()
+    {
+        _aboutActive = true;
+        _aboutPanel.Visibility = Visibility.Visible;
+    }
+
+    /// <summary>关闭关于面板。</summary>
+    private void CloseAbout()
+    {
+        _aboutActive = false;
+        _aboutPanel.Visibility = Visibility.Collapsed;
+    }
+
+    /// <summary>判断窗口坐标点是否在关于面板内。</summary>
+    private bool IsPointInAboutPanel(Point windowPoint)
+    {
+        var topLeft = _aboutPanel.TranslatePoint(new Point(0, 0), this);
+        return new Rect(topLeft, new Size(_aboutPanel.ActualWidth, _aboutPanel.ActualHeight)).Contains(windowPoint);
+    }
+
+    /// <summary>版本号文本（取程序集版本，如 2.2.8）。</summary>
+    private static string AboutVersionText
+    {
+        get
+        {
+            var version = System.Reflection.Assembly.GetExecutingAssembly().GetName().Version;
+            return version is null ? "2.2.8" : $"{version.Major}.{version.Minor}.{version.Build}";
+        }
+    }
+
+    /// <summary>构建关于面板：标题 + 右上 X、内容分区、右下 X。</summary>
+    private void BuildAboutPanel()
+    {
+        var layout = new StackPanel();
+
+        // 头部：标题 + 右上角关闭
+        var header = new Grid();
+        header.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+        header.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+        var title = new TextBlock
+        {
+            Text = "关于浮图查看器",
+            FontSize = 14,
+            FontWeight = FontWeights.SemiBold,
+            Foreground = new SolidColorBrush(Color.FromArgb(240, 224, 224, 224)),
+            VerticalAlignment = VerticalAlignment.Center,
+        };
+        Grid.SetColumn(title, 0);
+        var closeTop = new Button
+        {
+            Content = "✕",
+            Width = 28,
+            Height = 24,
+            FontSize = 12,
+            Padding = new Thickness(0),
+        };
+        closeTop.Click += (_, _) => CloseAbout();
+        Grid.SetColumn(closeTop, 1);
+        header.Children.Add(title);
+        header.Children.Add(closeTop);
+        layout.Children.Add(header);
+
+        layout.Children.Add(CreateAboutSection("软件名称与版本"));
+        layout.Children.Add(CreateAboutLine("浮图查看器 (FloatingImageViewer)"));
+        layout.Children.Add(CreateAboutLine($"版本号: {AboutVersionText}"));
+
+        layout.Children.Add(CreateAboutSection("程序简介"));
+        layout.Children.Add(CreateAboutLine("一款轻量级的悬浮图片查看器，基于 WPF 框架开发，旨在提供简洁、高效的图片浏览体验。"));
+
+        layout.Children.Add(CreateAboutSection("作者与版权"));
+        layout.Children.Add(CreateAboutLine("开发者: YeLee (Qingyi Midori)"));
+        layout.Children.Add(CreateAboutLine("版权: Copyright © 2026 Qingyi-Midori. All rights reserved."));
+
+        layout.Children.Add(CreateAboutSection("开源信息"));
+        layout.Children.Add(CreateAboutLine("本项目遵循 MIT 许可证 开源。"));
+        layout.Children.Add(CreateAboutLine("源代码托管于 GitHub:"));
+
+        // GitHub 链接（点击用系统浏览器打开）
+        var link = new TextBlock
+        {
+            Text = "https://github.com/Qingyi-Midori/FloatingImageViewer",
+            Foreground = new SolidColorBrush(Color.FromRgb(192, 235, 215)),
+            FontSize = 12.5,
+            Margin = new Thickness(0, 2, 0, 0),
+            Cursor = Cursors.Hand,
+            TextDecorations = TextDecorations.Underline,
+        };
+        link.MouseLeftButtonUp += (_, _) =>
+        {
+            try
+            {
+                System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo(link.Text)
+                {
+                    UseShellExecute = true,
+                });
+            }
+            catch
+            {
+                // 打开浏览器失败时静默忽略。
+            }
+        };
+        layout.Children.Add(link);
+
+        layout.Children.Add(CreateAboutSection("反馈与联系"));
+        layout.Children.Add(CreateAboutLine("欢迎提交 Issue 或 Pull Request 来报告 Bug 或提出新功能建议。"));
+
+        // 右下角关闭
+        var closeBottom = new Button
+        {
+            Content = "✕",
+            Width = 28,
+            Height = 24,
+            FontSize = 12,
+            Padding = new Thickness(0),
+            HorizontalAlignment = HorizontalAlignment.Right,
+            Margin = new Thickness(0, 12, 0, 0),
+        };
+        closeBottom.Click += (_, _) => CloseAbout();
+        layout.Children.Add(closeBottom);
+
+        _aboutPanel.Child = layout;
+    }
+
+    /// <summary>关于面板的分区小标题（薄荷绿加粗）。</summary>
+    private static TextBlock CreateAboutSection(string text) => new()
+    {
+        Text = text,
+        Foreground = new SolidColorBrush(Color.FromRgb(192, 235, 215)),
+        FontSize = 12.5,
+        FontWeight = FontWeights.SemiBold,
+        Margin = new Thickness(0, 10, 0, 2),
+    };
+
+    /// <summary>关于面板的正文行。</summary>
+    private static TextBlock CreateAboutLine(string text) => new()
+    {
+        Text = text,
+        Foreground = new SolidColorBrush(Color.FromArgb(232, 224, 224, 224)),
+        FontSize = 12.5,
+        TextWrapping = TextWrapping.Wrap,
+        Margin = new Thickness(0, 2, 0, 0),
+    };
 
     private double ParseInputText()
         => double.TryParse(_inputTextBox.Text, out var value) ? value : _inputCurrent;
