@@ -2,6 +2,7 @@ using System.IO;
 using System.Windows;
 using System.Windows.Threading;
 using FloatingImageViewer.Services;
+using static FloatingImageViewer.Services.AppStrings;
 using Microsoft.Win32;
 
 namespace FloatingImageViewer;
@@ -16,7 +17,7 @@ public partial class App : Application
         {
             MessageBox.Show(
                 $"发生未处理的错误：\n\n{args.Exception.Message}",
-                "浮窗看图器",
+                T("浮窗看图器"),
                 MessageBoxButton.OK,
                 MessageBoxImage.Error);
             args.Handled = true;
@@ -29,8 +30,8 @@ public partial class App : Application
         {
             var dialog = new OpenFileDialog
             {
-                Title = "选择图片",
-                Filter = "图片文件|*.png;*.jpg;*.jpeg;*.bmp;*.gif;*.webp;*.tif;*.tiff;*.ico|所有文件|*.*",
+                Title = T("选择图片"),
+                Filter = T("图片文件|*.png;*.jpg;*.jpeg;*.bmp;*.gif;*.webp;*.tif;*.tiff;*.ico|所有文件|*.*"),
                 Multiselect = false,
             };
             if (dialog.ShowDialog() != true)
