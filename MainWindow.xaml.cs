@@ -12,6 +12,7 @@ using System.Windows.Media.Imaging;
 using System.Windows.Threading;
 using FloatingImageViewer.Models;
 using FloatingImageViewer.Services;
+using static FloatingImageViewer.Services.AppStrings;
 using Microsoft.Win32;
 
 namespace FloatingImageViewer;
@@ -98,8 +99,8 @@ public partial class MainWindow : Window
         HorizontalAlignment = HorizontalAlignment.Right,
         Margin = new Thickness(0, 4, 0, 0),
     };
-    private readonly Button _inputOk = new() { Content = "确定", Width = 72, Margin = new Thickness(0, 10, 8, 0) };
-    private readonly Button _inputCancel = new() { Content = "取消", Width = 72, Margin = new Thickness(0, 10, 0, 0) };
+    private readonly Button _inputOk = new() { Content = T("确定"), Width = 72, Margin = new Thickness(0, 10, 8, 0) };
+    private readonly Button _inputCancel = new() { Content = T("取消"), Width = 72, Margin = new Thickness(0, 10, 0, 0) };
 
     // 图层透明度：独立条（图片内部偏下，常驻不随缩放）+ 全局面板（一个滚动条 + 展开按钮）
     private bool _hoverOpacityBarEnabled;
@@ -157,7 +158,7 @@ public partial class MainWindow : Window
         TextAlignment = TextAlignment.Right,
         Margin = new Thickness(10, 0, 0, 0),
     };
-    private readonly Button _globalOpacityExpand = new() { Content = "展开全部图层", Margin = new Thickness(0, 6, 0, 0) };
+    private readonly Button _globalOpacityExpand = new() { Content = T("展开全部图层"), Margin = new Thickness(0, 6, 0, 0) };
     private readonly StackPanel _globalOpacityRows = new();
 
     // 固定图片面板（仿全局透明度面板）：全局锁定开关 + 展开后每个图层单独固定
@@ -182,14 +183,17 @@ public partial class MainWindow : Window
     };
     private readonly CheckBox _globalFixedAll = new()
     {
-        Content = "锁定所有图层",
+        Content = T("锁定所有图层"),
         Margin = new Thickness(0, 0, 0, 6),
     };
-    private readonly Button _globalFixedExpand = new() { Content = "展开全部图层", Margin = new Thickness(0, 6, 0, 0) };
+    private readonly Button _globalFixedExpand = new() { Content = T("展开全部图层"), Margin = new Thickness(0, 6, 0, 0) };
     private readonly StackPanel _globalFixedRows = new();
 
-    // 关于面板（窗口内新图层，右上/右下 X 关闭）
+    // 关于面板（窗口内新图层，右上/右下 X 关闭，按住面板任意处可拖动）
     private bool _aboutActive;
+    private bool _aboutDragging;
+    private Point _aboutDragStart;
+    private Thickness _aboutDragOriginMargin;
     private readonly Border _aboutPanel = new()
     {
         Background = new SolidColorBrush(Color.FromArgb(245, 30, 30, 30)),
@@ -325,7 +329,7 @@ public partial class MainWindow : Window
         };
         RootGrid.Children.Add(_hoverOpacityBar);
 
-        _globalOpacityTitle.Text = "不透明度（全局）";
+        _globalOpacityTitle.Text = T("不透明度（全局）");
         var globalLayout = new StackPanel();
         globalLayout.Children.Add(_globalOpacityTitle);
         // 默认只显示一个滚动条（控制当前图层），点“展开全部图层”才列出所有图层。
@@ -368,7 +372,7 @@ public partial class MainWindow : Window
         });
         var globalDone = new Button
         {
-            Content = "完成",
+            Content = T("完成"),
             Width = 72,
             HorizontalAlignment = HorizontalAlignment.Right,
             Margin = new Thickness(0, 10, 0, 0),
@@ -379,7 +383,7 @@ public partial class MainWindow : Window
         RootGrid.Children.Add(_globalOpacityPanel);
 
         // 固定图片面板：全局锁定开关 + 展开后每个图层单独固定。
-        _globalFixedTitle.Text = "固定图片（全局）";
+        _globalFixedTitle.Text = T("固定图片（全局）");
         var fixedLayout = new StackPanel();
         fixedLayout.Children.Add(_globalFixedTitle);
         _globalFixedAll.Checked += (_, _) => ApplyGlobalFixed(true);
@@ -405,7 +409,7 @@ public partial class MainWindow : Window
         });
         var fixedDone = new Button
         {
-            Content = "完成",
+            Content = T("完成"),
             Width = 72,
             HorizontalAlignment = HorizontalAlignment.Right,
             Margin = new Thickness(0, 10, 0, 0),
@@ -415,9 +419,11 @@ public partial class MainWindow : Window
         _globalFixedPanel.Child = fixedLayout;
         RootGrid.Children.Add(_globalFixedPanel);
 
-        // 关于面板（窗口内新图层，右上/右下 X 关闭）。
+        // 关于面板（窗口内新图层，右上/右下 X 关闭，按住面板任意处可拖动）。
         BuildAboutPanel();
+        WireAboutPanelDrag();
         RootGrid.Children.Add(_aboutPanel);
+        Title = T("浮窗看图器"); // 窗口标题随系统语言（英文系统显示英文名）
 
         _inputSlider.ValueChanged += (_, _) =>
         {
@@ -673,7 +679,7 @@ public partial class MainWindow : Window
             {
                 MessageBox.Show(
                     $"无法加载图片：\n{path}\n\n{ex.Message}",
-                    "加载失败",
+                    T("加载失败"),
                     MessageBoxButton.OK,
                     MessageBoxImage.Error);
             }
@@ -1537,13 +1543,13 @@ public partial class MainWindow : Window
     {
         var menu = new ContextMenu();
 
-        menu.Items.Add(CreateCheckItem("窗口置顶", _settings.Topmost, () =>
+        menu.Items.Add(CreateCheckItem(T("窗口置顶"), _settings.Topmost, () =>
         {
             _settings.Topmost = !_settings.Topmost;
             Topmost = _settings.Topmost;
             SaveSettings();
         }));
-        menu.Items.Add(CreateCheckItem("剪贴板监听", _clipboardWatch, () =>
+        menu.Items.Add(CreateCheckItem(T("剪贴板监听"), _clipboardWatch, () =>
         {
             _clipboardWatch = !_clipboardWatch;
             _clipboardTimer.IsEnabled = _clipboardWatch;
@@ -1557,14 +1563,14 @@ public partial class MainWindow : Window
         menu.Items.Add(CreateInfoPanelItem());
 
         // 添加图片是主入口（顶层直接点击）；图层管理作为子菜单。
-        menu.Items.Add(CreateItem("添加图片...", AddImageFile));
+        menu.Items.Add(CreateItem(T("添加图片..."), AddImageFile));
         menu.Items.Add(CreateLayerSubmenu());
         menu.Items.Add(CreateMosaicSubmenu());
         menu.Items.Add(CreateCompareSubmenu());
 
         menu.Items.Add(CreateRadioSubmenu(
-            "缩放模式",
-            new[] { ("适配窗口", "Fit"), ("原始大小", "Original"), ("拉伸填充", "Stretch") },
+            T("缩放模式"),
+            new[] { (T("适配窗口"), "Fit"), (T("原始大小"), "Original"), (T("拉伸填充"), "Stretch") },
             _settings.ZoomMode,
             value =>
             {
@@ -1574,13 +1580,13 @@ public partial class MainWindow : Window
             }));
 
         menu.Items.Add(CreateRadioSubmenu(
-            "背景模式",
+            T("背景模式"),
             new[]
             {
-                ("完全透明", "Transparent"),
-                ("黑色", "Black"),
-                ("白色", "White"),
-                ("Alpha棋盘格", "Checkerboard"),
+                (T("完全透明"), "Transparent"),
+                (T("黑色"), "Black"),
+                (T("白色"), "White"),
+                (T("Alpha棋盘格"), "Checkerboard"),
             },
             _settings.BackgroundMode,
             value =>
@@ -1592,8 +1598,8 @@ public partial class MainWindow : Window
 
         menu.Items.Add(CreateGimmickSubmenu());
         // 透明度首级拆分：全局 = 面板（一个滚动条 + 展开按钮）；独立 = 图片内常驻条（勾选开关）。
-        menu.Items.Add(CreateItem("不透明度（全局）", OpenGlobalOpacityPanel));
-        menu.Items.Add(CreateCheckItem("不透明度（独立）", _hoverOpacityBarEnabled, () =>
+        menu.Items.Add(CreateItem(T("不透明度（全局）"), OpenGlobalOpacityPanel));
+        menu.Items.Add(CreateCheckItem(T("不透明度（独立）"), _hoverOpacityBarEnabled, () =>
         {
             _hoverOpacityBarEnabled = !_hoverOpacityBarEnabled;
             _settings.HoverOpacityBar = _hoverOpacityBarEnabled;
@@ -1608,8 +1614,8 @@ public partial class MainWindow : Window
             }
         }));
         // 固定图片：全局 = 面板（全局锁定开关 + 展开后单独调整）；独立 = 锁定鼠标所在图层（勾选）。
-        menu.Items.Add(CreateItem("固定图片（全局）", OpenGlobalFixedPanel));
-        menu.Items.Add(CreateCheckItem("固定图片（独立）", _activeLayer is { Fixed: true }, () =>
+        menu.Items.Add(CreateItem(T("固定图片（全局）"), OpenGlobalFixedPanel));
+        menu.Items.Add(CreateCheckItem(T("固定图片（独立）"), _activeLayer is { Fixed: true }, () =>
         {
             if (_activeLayer is { } layer)
             {
@@ -1621,13 +1627,13 @@ public partial class MainWindow : Window
         menu.Items.Add(CreateSlideshowItem());
         menu.Items.Add(CreateGifPauseItem());
         menu.Items.Add(new Separator());
-        menu.Items.Add(CreateItem("更换图片", ChangeImage));
-        menu.Items.Add(CreateItem("关闭图片", RemoveActiveLayer));
-        menu.Items.Add(CreateItem("重置窗口", ResetWindow));
+        menu.Items.Add(CreateItem(T("更换图片"), ChangeImage));
+        menu.Items.Add(CreateItem(T("关闭图片"), RemoveActiveLayer));
+        menu.Items.Add(CreateItem(T("重置窗口"), ResetWindow));
         menu.Items.Add(new Separator());
-        menu.Items.Add(CreateItem("退出程序", () => Close()));
+        menu.Items.Add(CreateItem(T("退出程序"), () => Close()));
         menu.Items.Add(new Separator());
-        menu.Items.Add(CreateItem("关于...", OpenAbout));
+        menu.Items.Add(CreateItem(T("关于..."), OpenAbout));
 
         return menu;
     }
@@ -1641,10 +1647,10 @@ public partial class MainWindow : Window
 
     private MenuItem CreateCacheSubmenu()
     {
-        var submenu = new MenuItem { Header = "图片缓存" };
+        var submenu = new MenuItem { Header = T("图片缓存") };
         submenu.Items.Add(CreateRadioSubmenu(
-            "策略",
-            new[] { ("按数量", "Count"), ("按大小", "Size") },
+            T("策略"),
+            new[] { (T("按数量"), "Count"), (T("按大小"), "Size") },
             _settings.CacheStrategy,
             value =>
             {
@@ -1655,9 +1661,9 @@ public partial class MainWindow : Window
 
         var presets = _settings.CacheStrategy == "Size"
             ? new (string, double)[] { ("128 MB", 128), ("256 MB", 256), ("512 MB", 512), ("1024 MB", 1024) }
-            : new (string, double)[] { ("10 张", 10), ("20 张", 20), ("50 张", 50), ("100 张", 100) };
+            : new (string, double)[] { (T("10 张"), 10), (T("20 张"), 20), (T("50 张"), 50), (T("100 张"), 100) };
         submenu.Items.Add(CreateValueSubmenu(
-            "上限",
+            T("上限"),
             presets,
             _settings.CacheLimit,
             value =>
@@ -1667,11 +1673,11 @@ public partial class MainWindow : Window
                 SaveSettings();
             },
             () => ShowInlineInput(
-                "缓存上限",
+                T("缓存上限"),
                 _settings.CacheStrategy == "Size" ? 32 : 5,
                 _settings.CacheStrategy == "Size" ? 8192 : 500,
                 _settings.CacheLimit,
-                _settings.CacheStrategy == "Size" ? "{0:0} MB" : "{0:0} 张",
+                _settings.CacheStrategy == "Size" ? "{0:0} MB" : T("{0:0} 张"),
                 slider: false,
                 value =>
                 {
@@ -1680,7 +1686,7 @@ public partial class MainWindow : Window
                     SaveSettings();
                 })));
 
-        submenu.Items.Add(CreateItem("清除缓存", () =>
+        submenu.Items.Add(CreateItem(T("清除缓存"), () =>
         {
             ImageCache.Clear();
             SaveSettings();
@@ -1694,12 +1700,12 @@ public partial class MainWindow : Window
     /// </summary>
     private MenuItem CreateGimmickSubmenu()
     {
-        var submenu = new MenuItem { Header = "无用小功能" };
+        var submenu = new MenuItem { Header = T("无用小功能") };
 
-        var aa = new MenuItem { Header = "抗锯齿" };
+        var aa = new MenuItem { Header = T("抗锯齿") };
         aa.Items.Add(CreateRadioSubmenu(
-            "模式",
-            new[] { ("关闭", "Off"), ("SSAA", "SSAA"), ("MSAA", "MSAA"), ("TXAA", "TXAA") },
+            T("模式"),
+            new[] { (T("关闭"), "Off"), ("SSAA", "SSAA"), ("MSAA", "MSAA"), ("TXAA", "TXAA") },
             _settings.AntiAliasing,
             value =>
             {
@@ -1708,7 +1714,7 @@ public partial class MainWindow : Window
                 SaveSettings();
             }));
         aa.Items.Add(CreateRadioSubmenu(
-            "SSAA 倍率",
+            T("SSAA 倍率"),
             new[] { ("2x", "2"), ("4x", "4"), ("8x", "8") },
             _settings.SsaaLevel.ToString(),
             value =>
@@ -1717,7 +1723,7 @@ public partial class MainWindow : Window
                 SaveSettings();
             }));
         aa.Items.Add(CreateRadioSubmenu(
-            "MSAA 采样",
+            T("MSAA 采样"),
             new[] { ("2x", "2"), ("4x", "4"), ("8x", "8") },
             _settings.MsaaLevel.ToString(),
             value =>
@@ -1726,8 +1732,8 @@ public partial class MainWindow : Window
                 SaveSettings();
             }));
         aa.Items.Add(CreateRadioSubmenu(
-            "TXAA 质量",
-            new[] { ("低", "Low"), ("中", "Medium"), ("高", "High") },
+            T("TXAA 质量"),
+            new[] { (T("低"), "Low"), (T("中"), "Medium"), (T("高"), "High") },
             _settings.TxaaQuality,
             value =>
             {
@@ -1799,7 +1805,7 @@ public partial class MainWindow : Window
             submenu.Items.Add(item);
         }
 
-        var custom = new MenuItem { Header = "自定义...", IsCheckable = true };
+        var custom = new MenuItem { Header = T("自定义..."), IsCheckable = true };
         custom.Click += (_, _) =>
         {
             custom.IsChecked = false; // 自定义值不落在预设上，不显示勾选
@@ -1822,14 +1828,14 @@ public partial class MainWindow : Window
     {
         var presets = new (string, double)[]
         {
-            ("1秒", 1),
-            ("2秒", 2),
-            ("3秒", 3),
-            ("5秒", 5),
-            ("10秒", 10),
+            (T("1秒"), 1),
+            (T("2秒"), 2),
+            (T("3秒"), 3),
+            (T("5秒"), 5),
+            (T("10秒"), 10),
         };
         return CreateValueSubmenu(
-            "轮播间隔",
+            T("轮播间隔"),
             presets,
             _settings.SlideshowIntervalSeconds,
             value =>
@@ -1843,11 +1849,11 @@ public partial class MainWindow : Window
                 SaveSettings();
             },
             () => ShowInlineInput(
-                "轮播间隔",
+                T("轮播间隔"),
                 1,
                 60,
                 _settings.SlideshowIntervalSeconds,
-                "{0:0} 秒",
+                T("{0:0} 秒"),
                 slider: false,
                 value =>
                 {
@@ -1864,13 +1870,13 @@ public partial class MainWindow : Window
     private MenuItem CreateTransitionSubmenu()
     {
         var transition = CreateRadioSubmenu(
-            "切换动画",
+            T("切换动画"),
             new[]
             {
-                ("无动画", "None"),
-                ("淡入淡出", "Fade"),
-                ("黑切", "BlackCut"),
-                ("划入", "Slide"),
+                (T("无动画"), "None"),
+                (T("淡入淡出"), "Fade"),
+                (T("黑切"), "BlackCut"),
+                (T("划入"), "Slide"),
             },
             _settings.SlideTransition,
             value =>
@@ -1890,7 +1896,7 @@ public partial class MainWindow : Window
             ("2000 ms", 2000),
         };
         transition.Items.Add(CreateValueSubmenu(
-            "时间",
+            T("时间"),
             presets,
             _settings.TransitionDurationMs,
             value =>
@@ -1899,7 +1905,7 @@ public partial class MainWindow : Window
                 SaveSettings();
             },
             () => ShowInlineInput(
-                "切换动画时间",
+                T("切换动画时间"),
                 50,
                 3000,
                 _settings.TransitionDurationMs,
@@ -1912,13 +1918,13 @@ public partial class MainWindow : Window
                 })));
 
         transition.Items.Add(CreateRadioSubmenu(
-            "切入方向",
+            T("切入方向"),
             new[]
             {
-                ("从左侧", "Left"),
-                ("从右侧", "Right"),
-                ("从上方", "Up"),
-                ("从下方", "Down"),
+                (T("从左侧"), "Left"),
+                (T("从右侧"), "Right"),
+                (T("从上方"), "Up"),
+                (T("从下方"), "Down"),
             },
             _settings.SlideDirection,
             value =>
@@ -1932,13 +1938,13 @@ public partial class MainWindow : Window
 
     private MenuItem CreateSlideshowItem()
     {
-        var submenu = new MenuItem { Header = "幻灯片放映" };
+        var submenu = new MenuItem { Header = T("幻灯片放映") };
 
         if (_slideshowActive)
         {
             var playPause = new MenuItem
             {
-                Header = _slideshowPlaying ? "暂停轮播" : "继续轮播",
+                Header = _slideshowPlaying ? T("暂停轮播") : T("继续轮播"),
                 IsCheckable = true,
                 IsChecked = _slideshowPlaying,
             };
@@ -1953,20 +1959,20 @@ public partial class MainWindow : Window
                     ResumeSlideshow();
                 }
 
-                playPause.Header = _slideshowPlaying ? "暂停轮播" : "继续轮播";
+                playPause.Header = _slideshowPlaying ? T("暂停轮播") : T("继续轮播");
                 playPause.IsChecked = _slideshowPlaying;
             };
             submenu.Items.Add(playPause);
 
-            submenu.Items.Add(CreateItem("上一张", ShowPrevious));
-            submenu.Items.Add(CreateItem("下一张", ShowNext));
+            submenu.Items.Add(CreateItem(T("上一张"), ShowPrevious));
+            submenu.Items.Add(CreateItem(T("下一张"), ShowNext));
         }
         else
         {
-            submenu.Items.Add(CreateItem("开始放映...", StartSlideshow));
+            submenu.Items.Add(CreateItem(T("开始放映..."), StartSlideshow));
         }
 
-        submenu.Items.Add(CreateCheckItem("循环模式", _settings.SlideshowLoop, () =>
+        submenu.Items.Add(CreateCheckItem(T("循环模式"), _settings.SlideshowLoop, () =>
         {
             _settings.SlideshowLoop = !_settings.SlideshowLoop;
             SaveSettings();
@@ -1975,7 +1981,7 @@ public partial class MainWindow : Window
         submenu.Items.Add(CreateTransitionSubmenu());
         if (_slideshowActive)
         {
-            submenu.Items.Add(CreateItem("退出幻灯片", ExitSlideshow));
+            submenu.Items.Add(CreateItem(T("退出幻灯片"), ExitSlideshow));
         }
 
         return submenu;
@@ -1990,7 +1996,7 @@ public partial class MainWindow : Window
         var anyPaused = gifs.Any(g => g.IsPaused);
         var item = new MenuItem
         {
-            Header = anyPaused ? "继续GIF动画" : "暂停GIF动画",
+            Header = anyPaused ? T("继续GIF动画") : T("暂停GIF动画"),
             IsEnabled = gifs.Count > 0,
         };
         item.Click += (_, _) =>
@@ -2007,7 +2013,7 @@ public partial class MainWindow : Window
                 }
             }
 
-            item.Header = anyPaused ? "暂停GIF动画" : "继续GIF动画";
+            item.Header = anyPaused ? T("暂停GIF动画") : T("继续GIF动画");
         };
         return item;
     }
@@ -2147,7 +2153,7 @@ public partial class MainWindow : Window
     /// <summary>把剪贴板图片添加为图层（缩放限制为不超过屏幕宽/高的 75%）。</summary>
     private void AddClipboardLayer(BitmapSource image)
     {
-        var layer = AddLayer("剪贴板图片", image);
+        var layer = AddLayer(T("剪贴板图片"), image);
         ApplyClipboardScale(layer, image);
     }
 
@@ -2204,7 +2210,7 @@ public partial class MainWindow : Window
 
         // 底图作为唯一图层：锁定 1:1 铺满窗口，窗口坐标即底图像素坐标。
         _mosaicBase = rtb;
-        var baseLayer = AddLayer("马赛克底图", rtb);
+        var baseLayer = AddLayer(T("马赛克底图"), rtb);
         _mosaicBaseLayer = baseLayer;
         baseLayer.ZoomScale = 1.0;
         baseLayer.UserPan = new Point(0, 0);
@@ -2424,44 +2430,44 @@ public partial class MainWindow : Window
     /// <summary>框选马赛克子菜单：样式 + 各样式参数（预设/自定义）+ 开始框选/退出。</summary>
     private MenuItem CreateMosaicSubmenu()
     {
-        var submenu = new MenuItem { Header = "框选马赛克" };
+        var submenu = new MenuItem { Header = T("框选马赛克") };
         submenu.Items.Add(CreateRadioSubmenu(
-            "样式",
-            new[] { ("马赛克", "Mosaic"), ("高斯模糊", "Blur"), ("噪声", "Smudge"), ("纯色", "Solid") },
+            T("样式"),
+            new[] { (T("马赛克"), "Mosaic"), (T("高斯模糊"), "Blur"), (T("噪声"), "Smudge"), (T("纯色"), "Solid") },
             _mosaicStyle.ToString(),
             value => _mosaicStyle = Enum.Parse<MosaicRenderer.Style>(value)));
         submenu.Items.Add(CreateValueSubmenu(
-            "马赛克大小",
+            T("马赛克大小"),
             new[] { ("8 px", 8d), ("16 px", 16d), ("32 px", 32d), ("64 px", 64d) },
             _mosaicBlockPx,
             value => _mosaicBlockPx = value,
-            () => ShowInlineInput("马赛克大小", 2, 200, _mosaicBlockPx, "{0:0} px", slider: false, value => _mosaicBlockPx = value)));
+            () => ShowInlineInput(T("马赛克大小"), 2, 200, _mosaicBlockPx, "{0:0} px", slider: false, value => _mosaicBlockPx = value)));
         submenu.Items.Add(CreateValueSubmenu(
-            "模糊像素",
+            T("模糊像素"),
             new[] { ("4 px", 4d), ("8 px", 8d), ("16 px", 16d), ("32 px", 32d) },
             _mosaicBlurPx,
             value => _mosaicBlurPx = value,
-            () => ShowInlineInput("模糊像素", 1, 100, _mosaicBlurPx, "{0:0} px", slider: false, value => _mosaicBlurPx = value)));
+            () => ShowInlineInput(T("模糊像素"), 1, 100, _mosaicBlurPx, "{0:0} px", slider: false, value => _mosaicBlurPx = value)));
         submenu.Items.Add(CreateValueSubmenu(
-            "噪声像素",
+            T("噪声像素"),
             new[] { ("4 px", 4d), ("8 px", 8d), ("16 px", 16d), ("32 px", 32d) },
             _mosaicSmudgePx,
             value => _mosaicSmudgePx = value,
-            () => ShowInlineInput("噪声像素", 1, 100, _mosaicSmudgePx, "{0:0} px", slider: false, value => _mosaicSmudgePx = value)));
+            () => ShowInlineInput(T("噪声像素"), 1, 100, _mosaicSmudgePx, "{0:0} px", slider: false, value => _mosaicSmudgePx = value)));
         submenu.Items.Add(CreateRadioSubmenu(
-            "纯色",
+            T("纯色"),
             new[]
             {
-                ("黑色", "#FF000000"), ("白色", "#FFFFFFFF"),
-                ("红色", "#FFFF0000"), ("绿色", "#FF00FF00"),
-                ("蓝色", "#FF0000FF"), ("黄色", "#FFFFFF00"),
-                ("青色", "#FF00FFFF"), ("品红", "#FFFF00FF"),
+                (T("黑色"), "#FF000000"), (T("白色"), "#FFFFFFFF"),
+                (T("红色"), "#FFFF0000"), (T("绿色"), "#FF00FF00"),
+                (T("蓝色"), "#FF0000FF"), (T("黄色"), "#FFFFFF00"),
+                (T("青色"), "#FF00FFFF"), (T("品红"), "#FFFF00FF"),
             },
             _mosaicColor.ToString(),
             value => _mosaicColor = (Color)ColorConverter.ConvertFromString(value)!));
-        submenu.Items.Add(CreateItem("自定义色盘...", PickMosaicColor));
+        submenu.Items.Add(CreateItem(T("自定义色盘..."), PickMosaicColor));
         submenu.Items.Add(new Separator());
-        submenu.Items.Add(CreateItem(_mosaicActive ? "退出马赛克" : "开始框选", () =>
+        submenu.Items.Add(CreateItem(_mosaicActive ? T("退出马赛克") : T("开始框选"), () =>
         {
             if (_mosaicActive)
             {
@@ -2484,8 +2490,8 @@ public partial class MainWindow : Window
     {
         var dialog = new OpenFileDialog
         {
-            Title = "选择对比图片",
-            Filter = "图片文件|*.png;*.jpg;*.jpeg;*.bmp;*.gif;*.webp;*.tif;*.tiff;*.ico|所有文件|*.*",
+            Title = T("选择对比图片"),
+            Filter = T("图片文件|*.png;*.jpg;*.jpeg;*.bmp;*.gif;*.webp;*.tif;*.tiff;*.ico|所有文件|*.*"),
             Multiselect = false,
         };
         if (dialog.ShowDialog(this) != true)
@@ -2554,7 +2560,7 @@ public partial class MainWindow : Window
             MessageBox.Show(
                 this,
                 $"无法加载对比图片：\n{ex.Message}",
-                "图片对比",
+                T("图片对比"),
                 MessageBoxButton.OK,
                 MessageBoxImage.Error);
         }
@@ -2701,15 +2707,15 @@ public partial class MainWindow : Window
     /// <summary>图片对比子菜单：选择对比图、布局、退出。</summary>
     private MenuItem CreateCompareSubmenu()
     {
-        var submenu = new MenuItem { Header = "图片对比" };
-        submenu.Items.Add(CreateItem(_compareActive ? "重新选择对比图片..." : "选择对比图片...", ChooseCompareImage));
+        var submenu = new MenuItem { Header = T("图片对比") };
+        submenu.Items.Add(CreateItem(_compareActive ? T("重新选择对比图片...") : T("选择对比图片..."), ChooseCompareImage));
         submenu.Items.Add(CreateRadioSubmenu(
-            "布局",
+            T("布局"),
             new[]
             {
-                ("左右并排", "SideBySide"),
-                ("上下并列", "TopBottom"),
-                ("滑动分割", "Split"),
+                (T("左右并排"), "SideBySide"),
+                (T("上下并列"), "TopBottom"),
+                (T("滑动分割"), "Split"),
             },
             _compareSplitMode ? "Split" : _compareTopBottom ? "TopBottom" : "SideBySide",
             value =>
@@ -2718,12 +2724,12 @@ public partial class MainWindow : Window
                 _compareTopBottom = value == "TopBottom";
                 UpdateCompareTransform();
             }));
-        submenu.Items.Add(CreateCheckItem("适应大小", _compareFitSize, () =>
+        submenu.Items.Add(CreateCheckItem(T("适应大小"), _compareFitSize, () =>
         {
             _compareFitSize = !_compareFitSize;
             UpdateCompareTransform();
         }));
-        submenu.Items.Add(CreateItem("退出对比", ExitCompare));
+        submenu.Items.Add(CreateItem(T("退出对比"), ExitCompare));
         return submenu;
     }
 
@@ -2777,7 +2783,7 @@ public partial class MainWindow : Window
         }
 
         var extension = Path.GetExtension(layer.Path).TrimStart('.').ToUpperInvariant();
-        sb.Append(string.IsNullOrEmpty(extension) ? "图片" : extension);
+        sb.Append(string.IsNullOrEmpty(extension) ? T("图片") : extension);
         return sb.ToString();
     }
 
@@ -2788,7 +2794,7 @@ public partial class MainWindow : Window
 
     /// <summary>图片信息面板子菜单开关（默认关闭）。</summary>
     private MenuItem CreateInfoPanelItem()
-        => CreateCheckItem("图片信息", _infoPanelEnabled, () =>
+        => CreateCheckItem(T("图片信息"), _infoPanelEnabled, () =>
         {
             _infoPanelEnabled = !_infoPanelEnabled;
             _settings.InfoPanel = _infoPanelEnabled;
@@ -2976,14 +2982,14 @@ public partial class MainWindow : Window
         }
 
         _globalOpacityRows.Visibility = Visibility.Visible;
-        _globalOpacityExpand.Content = "收起图层列表";
+        _globalOpacityExpand.Content = T("收起图层列表");
         _globalOpacityExpanded = true;
     }
 
     private void CollapseGlobalOpacityList()
     {
         _globalOpacityRows.Visibility = Visibility.Collapsed;
-        _globalOpacityExpand.Content = "展开全部图层";
+        _globalOpacityExpand.Content = T("展开全部图层");
         _globalOpacityExpanded = false;
     }
 
@@ -3099,14 +3105,14 @@ public partial class MainWindow : Window
         }
 
         _globalFixedRows.Visibility = Visibility.Visible;
-        _globalFixedExpand.Content = "收起图层列表";
+        _globalFixedExpand.Content = T("收起图层列表");
         _globalFixedExpanded = true;
     }
 
     private void CollapseGlobalFixedList()
     {
         _globalFixedRows.Visibility = Visibility.Collapsed;
-        _globalFixedExpand.Content = "展开全部图层";
+        _globalFixedExpand.Content = T("展开全部图层");
         _globalFixedExpanded = false;
     }
 
@@ -3130,7 +3136,7 @@ public partial class MainWindow : Window
 
         var check = new CheckBox
         {
-            Content = "固定",
+            Content = T("固定"),
             IsChecked = layer.Fixed,
             VerticalAlignment = VerticalAlignment.Center,
         };
@@ -3172,6 +3178,71 @@ public partial class MainWindow : Window
         _aboutPanel.Visibility = Visibility.Collapsed;
     }
 
+    /// <summary>让关于面板可拖动：按住面板任意处拖动（按钮与 GitHub 链接除外）。</summary>
+    private void WireAboutPanelDrag()
+    {
+        _aboutPanel.MouseLeftButtonDown += (_, e) =>
+        {
+            if (!_aboutActive || e.OriginalSource is not DependencyObject src || IsInteractiveAboutChild(src))
+            {
+                return;
+            }
+
+            _aboutDragging = true;
+            _aboutDragStart = e.GetPosition(this);
+            _aboutDragOriginMargin = _aboutPanel.Margin;
+            _aboutPanel.CaptureMouse();
+            e.Handled = true;
+        };
+        _aboutPanel.MouseMove += (_, e) =>
+        {
+            if (!_aboutDragging)
+            {
+                return;
+            }
+
+            var pos = e.GetPosition(this);
+            _aboutPanel.Margin = new Thickness(
+                _aboutDragOriginMargin.Left + pos.X - _aboutDragStart.X,
+                _aboutDragOriginMargin.Top + pos.Y - _aboutDragStart.Y,
+                0,
+                0);
+            e.Handled = true;
+        };
+        _aboutPanel.MouseLeftButtonUp += (_, e) =>
+        {
+            if (!_aboutDragging)
+            {
+                return;
+            }
+
+            _aboutDragging = false;
+            _aboutPanel.ReleaseMouseCapture();
+            e.Handled = true;
+        };
+    }
+
+    /// <summary>点击目标是否属于面板内的可交互子元素（按钮 / GitHub 链接），是则不启动拖动。</summary>
+    private static bool IsInteractiveAboutChild(DependencyObject? source)
+    {
+        while (source is not null)
+        {
+            if (source is Button)
+            {
+                return true;
+            }
+
+            if (source is TextBlock { Tag: "about-link" })
+            {
+                return true;
+            }
+
+            source = VisualTreeHelper.GetParent(source);
+        }
+
+        return false;
+    }
+
     /// <summary>判断窗口坐标点是否在关于面板内。</summary>
     private bool IsPointInAboutPanel(Point windowPoint)
     {
@@ -3200,7 +3271,7 @@ public partial class MainWindow : Window
         header.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
         var title = new TextBlock
         {
-            Text = "关于浮图查看器",
+            Text = T("关于浮图查看器"),
             FontSize = 14,
             FontWeight = FontWeights.SemiBold,
             Foreground = new SolidColorBrush(Color.FromArgb(240, 224, 224, 224)),
@@ -3221,20 +3292,20 @@ public partial class MainWindow : Window
         header.Children.Add(closeTop);
         layout.Children.Add(header);
 
-        layout.Children.Add(CreateAboutSection("软件名称与版本"));
+        layout.Children.Add(CreateAboutSection(T("软件名称与版本")));
         layout.Children.Add(CreateAboutLine("浮图查看器 (FloatingImageViewer)"));
-        layout.Children.Add(CreateAboutLine($"版本号: {AboutVersionText}"));
+        layout.Children.Add(CreateAboutLine(T("版本号: ") + AboutVersionText));
 
-        layout.Children.Add(CreateAboutSection("程序简介"));
-        layout.Children.Add(CreateAboutLine("一款轻量级的悬浮图片查看器，基于 WPF 框架开发，旨在提供简洁、高效的图片浏览体验。"));
+        layout.Children.Add(CreateAboutSection(T("程序简介")));
+        layout.Children.Add(CreateAboutLine(T("一款轻量级的悬浮图片查看器，基于 WPF 框架开发，旨在提供简洁、高效的图片浏览体验。")));
 
-        layout.Children.Add(CreateAboutSection("作者与版权"));
-        layout.Children.Add(CreateAboutLine("开发者: YeLee (Qingyi Midori)"));
-        layout.Children.Add(CreateAboutLine("版权: Copyright © 2026 Qingyi-Midori. All rights reserved."));
+        layout.Children.Add(CreateAboutSection(T("作者与版权")));
+        layout.Children.Add(CreateAboutLine(T("开发者: YeLee (Qingyi Midori)")));
+        layout.Children.Add(CreateAboutLine(T("版权: Copyright © 2026 Qingyi-Midori. All rights reserved.")));
 
-        layout.Children.Add(CreateAboutSection("开源信息"));
-        layout.Children.Add(CreateAboutLine("本项目遵循 MIT 许可证 开源。"));
-        layout.Children.Add(CreateAboutLine("源代码托管于 GitHub:"));
+        layout.Children.Add(CreateAboutSection(T("开源信息")));
+        layout.Children.Add(CreateAboutLine(T("本项目遵循 MIT 许可证 开源。")));
+        layout.Children.Add(CreateAboutLine(T("源代码托管于 GitHub:")));
 
         // GitHub 链接（点击用系统浏览器打开）
         var link = new TextBlock
@@ -3245,6 +3316,7 @@ public partial class MainWindow : Window
             Margin = new Thickness(0, 2, 0, 0),
             Cursor = Cursors.Hand,
             TextDecorations = TextDecorations.Underline,
+            Tag = "about-link", // 拖动面板时排除（保留点击打开）
         };
         link.MouseLeftButtonUp += (_, _) =>
         {
@@ -3262,8 +3334,8 @@ public partial class MainWindow : Window
         };
         layout.Children.Add(link);
 
-        layout.Children.Add(CreateAboutSection("反馈与联系"));
-        layout.Children.Add(CreateAboutLine("欢迎提交 Issue 或 Pull Request 来报告 Bug 或提出新功能建议。"));
+        layout.Children.Add(CreateAboutSection(T("反馈与联系")));
+        layout.Children.Add(CreateAboutLine(T("欢迎提交 Issue 或 Pull Request 来报告 Bug 或提出新功能建议。")));
 
         // 右下角关闭
         var closeBottom = new Button
@@ -3310,8 +3382,8 @@ public partial class MainWindow : Window
     {
         var dialog = new OpenFileDialog
         {
-            Title = "添加图片",
-            Filter = "图片文件|*.png;*.jpg;*.jpeg;*.bmp;*.gif;*.webp;*.tif;*.tiff;*.ico|所有文件|*.*",
+            Title = T("添加图片"),
+            Filter = T("图片文件|*.png;*.jpg;*.jpeg;*.bmp;*.gif;*.webp;*.tif;*.tiff;*.ico|所有文件|*.*"),
             Multiselect = true,
         };
         if (dialog.ShowDialog(this) != true)
@@ -3339,8 +3411,8 @@ public partial class MainWindow : Window
         {
             MessageBox.Show(
                 this,
-                "所选文件都无法加载。",
-                "添加图片",
+                T("所选文件都无法加载。"),
+                T("添加图片"),
                 MessageBoxButton.OK,
                 MessageBoxImage.Information);
         }
@@ -3352,10 +3424,10 @@ public partial class MainWindow : Window
     /// </summary>
     private MenuItem CreateLayerSubmenu()
     {
-        var submenu = new MenuItem { Header = "图层" };
+        var submenu = new MenuItem { Header = T("图层") };
         if (_layers.Count == 0)
         {
-            submenu.Items.Add(CreateItem(_compareActive ? "对比模式" : "暂无图片", () => { }));
+            submenu.Items.Add(CreateItem(_compareActive ? T("对比模式") : T("暂无图片"), () => { }));
             return submenu;
         }
 
@@ -3389,11 +3461,11 @@ public partial class MainWindow : Window
         if (_layers.Count >= 2)
         {
             submenu.Items.Add(new Separator());
-            submenu.Items.Add(CreateItem("上移一层", () => MoveActiveLayer(1)));
-            submenu.Items.Add(CreateItem("下移一层", () => MoveActiveLayer(-1)));
+            submenu.Items.Add(CreateItem(T("上移一层"), () => MoveActiveLayer(1)));
+            submenu.Items.Add(CreateItem(T("下移一层"), () => MoveActiveLayer(-1)));
         }
 
-        submenu.Items.Add(CreateItem("删除图层", RemoveActiveLayer));
+        submenu.Items.Add(CreateItem(T("删除图层"), RemoveActiveLayer));
         return submenu;
     }
 
@@ -3424,8 +3496,8 @@ public partial class MainWindow : Window
     {
         var dialog = new OpenFileDialog
         {
-            Title = "更换图片",
-            Filter = "图片文件|*.png;*.jpg;*.jpeg;*.bmp;*.gif;*.webp;*.tif;*.tiff;*.ico|所有文件|*.*",
+            Title = T("更换图片"),
+            Filter = T("图片文件|*.png;*.jpg;*.jpeg;*.bmp;*.gif;*.webp;*.tif;*.tiff;*.ico|所有文件|*.*"),
             Multiselect = false,
         };
         if (dialog.ShowDialog(this) != true)
@@ -3467,7 +3539,7 @@ public partial class MainWindow : Window
 
     private void StartSlideshow()
     {
-        var dialog = new OpenFolderDialog { Title = "选择幻灯片文件夹" };
+        var dialog = new OpenFolderDialog { Title = T("选择幻灯片文件夹") };
         if (dialog.ShowDialog(this) != true)
         {
             return;
@@ -3483,13 +3555,13 @@ public partial class MainWindow : Window
         }
         catch (Exception ex)
         {
-            MessageBox.Show(this, $"无法读取文件夹：\n{ex.Message}", "幻灯片放映", MessageBoxButton.OK, MessageBoxImage.Error);
+            MessageBox.Show(this, $"无法读取文件夹：\n{ex.Message}", T("幻灯片放映"), MessageBoxButton.OK, MessageBoxImage.Error);
             return;
         }
 
         if (files.Count == 0)
         {
-            MessageBox.Show(this, "该文件夹中没有支持的图片。", "幻灯片放映", MessageBoxButton.OK, MessageBoxImage.Information);
+            MessageBox.Show(this, T("该文件夹中没有支持的图片。"), T("幻灯片放映"), MessageBoxButton.OK, MessageBoxImage.Information);
             return;
         }
 
@@ -3805,7 +3877,7 @@ public partial class MainWindow : Window
         _trayIcon = new System.Windows.Forms.NotifyIcon
         {
             Icon = LoadAppIcon(),
-            Text = "浮窗看图器",
+            Text = T("浮窗看图器"),
             Visible = true,
         };
         // 左键/双击：激活窗口
