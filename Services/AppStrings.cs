@@ -4,14 +4,31 @@ using System.Globalization;
 namespace FloatingImageViewer.Services;
 
 /// <summary>
-/// 界面文案国际化：系统默认语言非中文时切换到英文。
-/// key 使用中文原文，英文系统按下表翻译；未收录的文案回退中文（保证功能不丢）。
+/// 界面文案国际化：默认跟随系统默认语言（非中文时切换英文），
+/// 也可通过菜单「语言」手动覆盖（System / Zh / En）。
+/// key 使用中文原文，英文按下表翻译；未收录的文案回退中文（保证功能不丢）。
 /// </summary>
 public static class AppStrings
 {
+    /// <summary>手动语言覆盖：System（跟随系统）/ Zh / En。</summary>
+    public static string Override { get; set; } = "System";
+
+    /// <summary>当前生效语言（zh / en）。</summary>
+    public static string CurrentLanguage
+        => Override switch
+        {
+            "Zh" => "zh",
+            "En" => "en",
+            _ => SystemLanguage,
+        };
+
     /// <summary>系统默认语言是否为中文（简体/繁体）。</summary>
-    public static readonly bool IsChinese =
-        CultureInfo.InstalledUICulture.TwoLetterISOLanguageName.Equals("zh", StringComparison.OrdinalIgnoreCase);
+    public static bool IsChinese => CurrentLanguage == "zh";
+
+    private static string SystemLanguage
+        => CultureInfo.InstalledUICulture.TwoLetterISOLanguageName.StartsWith("zh", StringComparison.OrdinalIgnoreCase)
+            ? "zh"
+            : "en";
 
     /// <summary>取当前语言的文案。</summary>
     public static string T(string zh) => IsChinese ? zh : Translate(zh);
@@ -176,6 +193,10 @@ public static class AppStrings
         ["10秒"] = "10 s",
         ["切换动画时间"] = "Transition Duration",
         ["图片"] = "Image",
+        ["语言"] = "Language",
+        ["跟随系统"] = "Follow System",
+        ["中文"] = "Chinese",
+        ["English"] = "English",
     };
 
     private static string Translate(string zh)

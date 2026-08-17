@@ -270,9 +270,9 @@ Assert(clamped.SlideTransition == "Fade" && clamped.SlideDirection == "Left", "�
 
             var buildMenu = typeof(MainWindow).GetMethod("BuildContextMenu", BindingFlags.NonPublic | BindingFlags.Instance)!;
             var menu = (ContextMenu)buildMenu.Invoke(window, null)!;
-            Assert(menu is not null && menu.Items.Count == 25, "菜单项数量");
+            Assert(menu is not null && menu.Items.Count == 26, "菜单项数量");
             var headers = menu!.Items.OfType<MenuItem>().Select(m => m.Header?.ToString()).ToList();
-            foreach (var expected in new[] { "窗口置顶", "剪贴板监听", "图片信息", "添加图片...", "图层", "框选马赛克", "图片对比", "缩放模式", "背景模式", "无用小功能", "不透明度（全局）", "不透明度（独立）", "固定图片（全局）", "固定图片（独立）", "图片缓存", "幻灯片放映", "暂停GIF动画", "更换图片", "关闭图片", "重置窗口", "退出程序", "关于..." })
+            foreach (var expected in new[] { "窗口置顶", "剪贴板监听", "图片信息", "添加图片...", "图层", "框选马赛克", "图片对比", "缩放模式", "背景模式", "无用小功能", "不透明度（全局）", "不透明度（独立）", "固定图片（全局）", "固定图片（独立）", "图片缓存", "幻灯片放映", "暂停GIF动画", "更换图片", "关闭图片", "重置窗口", "退出程序", "语言", "关于..." })
             {
                 Assert(headers.Contains(expected), "菜单包含: " + expected);
             }

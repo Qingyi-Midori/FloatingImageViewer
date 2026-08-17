@@ -193,7 +193,9 @@ public partial class MainWindow : Window
     private bool _aboutActive;
     private bool _aboutDragging;
     private Point _aboutDragStart;
-    private Thickness _aboutDragOriginMargin;
+    private double _aboutDragOriginX;
+    private double _aboutDragOriginY;
+    private readonly TranslateTransform _aboutPanelTransform = new();
     private readonly Border _aboutPanel = new()
     {
         Background = new SolidColorBrush(Color.FromArgb(245, 30, 30, 30)),
@@ -261,6 +263,7 @@ public partial class MainWindow : Window
         InitializeComponent();
 
         _settings = SettingsService.Load();
+        AppStrings.Override = _settings.Language; // 界面语言覆盖（默认跟随系统）
         ApplyPersistedState();
         ImageCache.Configure(_settings.CacheStrategy, _settings.CacheLimit);
         _clipboardWatch = _settings.ClipboardWatch;
@@ -423,6 +426,7 @@ public partial class MainWindow : Window
         BuildAboutPanel();
         WireAboutPanelDrag();
         RootGrid.Children.Add(_aboutPanel);
+        _aboutPanel.RenderTransform = _aboutPanelTransform; // 拖动用渲染变换（不触发布局重排，跟手）
         Title = T("浮窗看图器"); // 窗口标题随系统语言（英文系统显示英文名）
 
         _inputSlider.ValueChanged += (_, _) =>
@@ -1631,11 +1635,33 @@ public partial class MainWindow : Window
         menu.Items.Add(CreateItem(T("关闭图片"), RemoveActiveLayer));
         menu.Items.Add(CreateItem(T("重置窗口"), ResetWindow));
         menu.Items.Add(new Separator());
+        menu.Items.Add(CreateLanguageSubmenu());
         menu.Items.Add(CreateItem(T("退出程序"), () => Close()));
         menu.Items.Add(new Separator());
         menu.Items.Add(CreateItem(T("关于..."), OpenAbout));
 
         return menu;
+    }
+
+    /// <summary>「语言」子菜单：跟随系统 / 中文 / English（手动覆盖界面语言，持久化）。</summary>
+    private MenuItem CreateLanguageSubmenu()
+    {
+        return CreateRadioSubmenu(
+            T("语言"),
+            new[] { (T("跟随系统"), "System"), (T("中文"), "Zh"), ("English", "En") },
+            _settings.Language,
+            value =>
+            {
+                _settings.Language = value;
+                AppStrings.Override = value;
+                Title = T("浮窗看图器");
+                if (_trayIcon is not null)
+                {
+                    _trayIcon.Text = T("浮窗看图器");
+                }
+
+                SaveSettings();
+            });
     }
 
     private static MenuItem CreateItem(string header, Action onClick)
@@ -3178,7 +3204,8 @@ public partial class MainWindow : Window
         _aboutPanel.Visibility = Visibility.Collapsed;
     }
 
-    /// <summary>让关于面板可拖动：按住面板任意处拖动（按钮与 GitHub 链接除外）。</summary>
+    /// <summary>让关于面板可拖动：按住面板任意处拖动（按钮与 GitHub 链接除外）。
+    /// 用渲染变换平移（不触发布局重排），按下点相对面板的位置保持不变，拖动跟手。</summary>
     private void WireAboutPanelDrag()
     {
         _aboutPanel.MouseLeftButtonDown += (_, e) =>
@@ -3190,7 +3217,8 @@ public partial class MainWindow : Window
 
             _aboutDragging = true;
             _aboutDragStart = e.GetPosition(this);
-            _aboutDragOriginMargin = _aboutPanel.Margin;
+            _aboutDragOriginX = _aboutPanelTransform.X;
+            _aboutDragOriginY = _aboutPanelTransform.Y;
             _aboutPanel.CaptureMouse();
             e.Handled = true;
         };
@@ -3202,11 +3230,8 @@ public partial class MainWindow : Window
             }
 
             var pos = e.GetPosition(this);
-            _aboutPanel.Margin = new Thickness(
-                _aboutDragOriginMargin.Left + pos.X - _aboutDragStart.X,
-                _aboutDragOriginMargin.Top + pos.Y - _aboutDragStart.Y,
-                0,
-                0);
+            _aboutPanelTransform.X = _aboutDragOriginX + pos.X - _aboutDragStart.X;
+            _aboutPanelTransform.Y = _aboutDragOriginY + pos.Y - _aboutDragStart.Y;
             e.Handled = true;
         };
         _aboutPanel.MouseLeftButtonUp += (_, e) =>

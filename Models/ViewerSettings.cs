@@ -22,6 +22,9 @@ public sealed class ViewerSettings
     /// <summary>图片信息面板（鼠标悬停图片时在图片右侧显示信息，默认关闭）。</summary>
     public bool InfoPanel { get; set; }
 
+    /// <summary>界面语言：System（跟随系统）/ Zh / En。</summary>
+    public string Language { get; set; } = "System";
+
     /// <summary>独立透明度条（悬停图片时在图片下方显示，只调整该图层，默认开启）。</summary>
     public bool HoverOpacityBar { get; set; } = true;
 
